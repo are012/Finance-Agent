@@ -7,52 +7,56 @@ from pydantic import BaseModel
 import os
 
 from data.data_loader import StandardDataLoader
-from core.llm_engine import QwenPredictor
+from agents.risk_manager import RiskManagerAgent
 
 app = FastAPI(title="Finance Agent API")
 
-# Initialize LLM globally (Lazy loading can be used, but for API we usually keep it hot)
-print("Initializing LLM...")
-# NOTE: In a real production environment with 9B model, initialization might take a minute.
-predictor = None
+print("Initializing Agents...")
+risk_manager = None
 try:
-    predictor = QwenPredictor(model_name="Qwen/Qwen3.5-9B", use_4bit=True)
+    risk_manager = RiskManagerAgent()
 except Exception as e:
-    print(f"Warning: Could not load LLM on startup. {e}")
+    print(f"Warning: Could not initialize Risk Manager on startup. {e}")
 
 class PredictRequest(BaseModel):
     ticker: str
 
 class PredictResponse(BaseModel):
     ticker: str
-    context: str
-    prediction: str
+    action: str
+    weight_allocation: int
+    stop_loss_price: float
+    justification: str
 
 @app.post("/api/predict", response_model=PredictResponse)
 async def predict_stock(req: PredictRequest):
-    if not predictor:
-        raise HTTPException(status_code=503, detail="LLM Model is not initialized or currently loading.")
+    if False: # Dummy check
+        pass
         
     ticker = req.ticker.upper()
     try:
-        # Load Data
-        loader = StandardDataLoader(ticker=ticker)
-        context = loader.compile_all_data()
+        if not risk_manager:
+            # Lazy load if failed previously
+            manager = RiskManagerAgent()
+        else:
+            manager = risk_manager
+            
+        decision = manager.evaluate_position(ticker)
 
-        # Predict
-        prediction = predictor.generate_prediction(ticker, context)
-
-        return PredictResponse(
-            ticker=ticker,
-            context=context,
-            prediction=prediction
-        )
+        return {
+            "ticker": decision.ticker,
+            "action": decision.action,
+            "weight_allocation": decision.weight_allocation,
+            "stop_loss_price": decision.stop_loss_price,
+            "justification": decision.justification
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    with open("index.html", "r", encoding="utf-8") as f:
+    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html")
+    with open(frontend_path, "r", encoding="utf-8") as f:
         return f.read()
 
 if __name__ == "__main__":

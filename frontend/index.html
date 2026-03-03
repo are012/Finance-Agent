@@ -1,22 +1,29 @@
-<!-- c:\Finance\Finance-Agent\index.html -->
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Finance Predictor</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Quantamental AI System</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f172a;
-            --surface-color: #1e293b;
+            --bg-color: #0b0f19;
+            --surface-color: #151b2b;
+            --surface-hover: #1e2638;
             --primary-color: #3b82f6;
-            --primary-hover: #2563eb;
+            --primary-glow: rgba(59, 130, 246, 0.6);
+            --success-color: #10b981;
+            --danger-color: #ef4444;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --border-color: #334155;
-            --accent-glow: rgba(59, 130, 246, 0.5);
+            --border-color: #2a3441;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
@@ -25,167 +32,257 @@
             font-family: 'Inter', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-main);
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh;
         }
 
         header {
             width: 100%;
-            padding: 2rem 0;
+            padding: 3rem 1rem;
             text-align: center;
-            background: linear-gradient(180deg, rgba(30, 41, 59, 1) 0%, rgba(15, 23, 42, 0) 100%);
+            background: radial-gradient(circle at top, rgba(30, 41, 59, 0.8) 0%, rgba(11, 15, 25, 0) 70%);
         }
 
         h1 {
-            font-size: 2.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
             margin: 0;
-            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 20px rgba(167, 139, 250, 0.3);
+            text-shadow: 0 0 30px rgba(192, 132, 252, 0.2);
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-family: 'Outfit', sans-serif;
         }
 
         .container {
-            width: 90%;
-            max-width: 1000px;
-            margin: 2rem auto;
+            width: 100%;
+            max-width: 1100px;
+            padding: 0 2rem;
             display: flex;
             flex-direction: column;
-            gap: 2rem;
+            gap: 2.5rem;
+            margin-bottom: 4rem;
         }
 
-        .input-card {
-            background-color: var(--surface-color);
-            padding: 2rem;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        /* Search Bar */
+        .search-wrapper {
+            background-color: rgba(21, 27, 43, 0.6);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 20px;
             border: 1px solid var(--border-color);
             display: flex;
             gap: 1rem;
             align-items: center;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s ease;
         }
 
-        .input-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 40px var(--accent-glow);
+        .search-wrapper.focus {
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 15px 40px var(--primary-glow);
         }
 
         input[type="text"] {
             flex: 1;
             padding: 1rem 1.5rem;
-            font-size: 1.2rem;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background-color: var(--bg-color);
+            font-size: 1.25rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            border: none;
+            background: transparent;
             color: var(--text-main);
             outline: none;
-            transition: border-color 0.3s;
         }
 
-        input[type="text"]:focus {
-            border-color: var(--primary-color);
+        input::placeholder {
+            color: #475569;
         }
 
         button {
-            padding: 1rem 2rem;
+            padding: 1rem 2.5rem;
             font-size: 1.1rem;
+            font-family: 'Outfit', sans-serif;
             font-weight: 600;
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, var(--primary-color), #2563eb);
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background-color 0.3s, transform 0.1s;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(rgba(255, 255, 255, 0.2), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
         }
 
         button:hover {
-            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--primary-glow);
+        }
+
+        button:hover::after {
+            opacity: 1;
         }
 
         button:active {
-            transform: scale(0.98);
-        }
-
-        button:disabled {
-            background-color: var(--border-color);
-            cursor: not-allowed;
-            color: var(--text-muted);
-        }
-
-        .results-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.5s ease, transform 0.5s ease;
-        }
-
-        .results-container.visible {
-            opacity: 1;
             transform: translateY(0);
         }
 
-        .panel {
+        button:disabled {
+            background: var(--surface-hover);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Results Area */
+        .results-area {
+            display: none;
+            flex-direction: column;
+            gap: 2rem;
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .results-area.visible {
+            display: flex;
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Top Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .metric-card {
             background-color: var(--surface-color);
-            padding: 1.5rem;
-            border-radius: 16px;
+            padding: 2rem;
+            border-radius: 20px;
             border: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            max-height: 600px;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
         }
 
-        .panel h2 {
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+            opacity: 0.5;
+        }
+
+        .metric-label {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .value-buy {
+            color: var(--success-color);
+        }
+
+        .value-sell {
+            color: var(--danger-color);
+        }
+
+        .value-neutral {
+            color: #f59e0b;
+        }
+
+        /* Detail Panel */
+        .detail-panel {
+            background-color: var(--surface-color);
+            padding: 2.5rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .detail-panel h2 {
+            font-family: 'Outfit', sans-serif;
             margin-top: 0;
+            margin-bottom: 1.5rem;
             font-size: 1.5rem;
             color: #e2e8f0;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
-        .content-box {
-            flex: 1;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
+        .justification-content {
+            font-size: 1.05rem;
+            line-height: 1.7;
             color: #cbd5e1;
-            padding-right: 0.5rem;
+            white-space: pre-wrap;
         }
 
-        /* Custom Scrollbar */
-        .content-box::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .content-box::-webkit-scrollbar-track {
-            background: var(--bg-color);
+        .justification-content strong {
+            color: #fff;
+            font-weight: 600;
+            background: rgba(59, 130, 246, 0.1);
+            padding: 0 4px;
             border-radius: 4px;
         }
 
-        .content-box::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 4px;
-        }
-
-        .content-box::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
-
+        /* Spinner */
         .spinner {
             display: none;
-            width: 24px;
-            height: 24px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-left: 10px;
+            animation: spin 0.8s linear infinite;
         }
 
         @keyframes spin {
@@ -194,24 +291,10 @@
             }
         }
 
-        .btn-content {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        @media (max-width: 768px) {
-            .results-container {
-                grid-template-columns: 1fr;
-            }
-
-            .input-card {
-                flex-direction: column;
-            }
-
-            button {
-                width: 100%;
-            }
+        /* Markdown rendering styles */
+        .md-bold {
+            font-weight: 700;
+            color: #fff;
         }
     </style>
 </head>
@@ -219,42 +302,77 @@
 <body>
 
     <header>
-        <h1>AI Finance Predictor</h1>
-        <p style="color: var(--text-muted); margin-top: 0.5rem;">Powered by Qwen3.5-9B</p>
+        <h1>Quantamental AI</h1>
+        <div class="subtitle">Multi-Agent Hybrid Investment Architecture</div>
     </header>
 
     <div class="container">
-        <div class="input-card">
-            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g., AAPL, TSLA, NVDA)"
+        <!-- Search Wrapper -->
+        <div class="search-wrapper" id="searchWrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="color: #475569; margin-left: 0.5rem;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g. AAPL, NVDA)"
+                onfocus="document.getElementById('searchWrapper').classList.add('focus')"
+                onblur="document.getElementById('searchWrapper').classList.remove('focus')"
                 onkeypress="handleKeyPress(event)">
-            <button id="predictBtn" onclick="runPrediction()">
-                <div class="btn-content">
-                    <span id="btnText">Analyze & Predict</span>
-                    <div id="spinner" class="spinner"></div>
-                </div>
+            <button id="predictBtn" onclick="runAnalysis()">
+                <span id="btnText">Execute Analysis</span>
+                <div id="spinner" class="spinner"></div>
             </button>
         </div>
 
-        <div id="resultsArea" class="results-container">
-            <div class="panel">
-                <h2>Raw Context Data</h2>
-                <div id="contextData" class="content-box">Waiting for input...</div>
+        <!-- Results -->
+        <div class="results-area" id="resultsArea">
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <span class="metric-label">Recommended Action</span>
+                    <span class="metric-value" id="resAction">-</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Portfolio Allocation</span>
+                    <span class="metric-value"><span id="resWeight">0</span>%</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Stop Loss / Support</span>
+                    <span class="metric-value">$<span id="resStopLoss">0.00</span></span>
+                </div>
             </div>
-            <div class="panel" style="border-top: 4px solid var(--primary-color);">
-                <h2>AI Prediction</h2>
-                <div id="predictionData" class="content-box">Waiting for inference...</div>
+
+            <div class="detail-panel">
+                <h2>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    Analysis Justification
+                </h2>
+                <div id="resJustification" class="justification-content">Loading agent outputs...</div>
             </div>
+
         </div>
     </div>
 
     <script>
         function handleKeyPress(e) {
             if (e.key === 'Enter') {
-                runPrediction();
+                runAnalysis();
             }
         }
 
-        async function runPrediction() {
+        function formatMarkdown(text) {
+            // Very simple parser for bold **text**
+            return text.replace(/\*\*(.*?)\*\*/g, '<span class="md-bold">$1</span>');
+        }
+
+        async function runAnalysis() {
             const ticker = document.getElementById('tickerInput').value.trim();
             if (!ticker) return;
 
@@ -262,18 +380,19 @@
             const btnText = document.getElementById('btnText');
             const spinner = document.getElementById('spinner');
             const resultsArea = document.getElementById('resultsArea');
-            const contextData = document.getElementById('contextData');
-            const predictionData = document.getElementById('predictionData');
+
+            // DOM Elements to update
+            const mAction = document.getElementById('resAction');
+            const mWeight = document.getElementById('resWeight');
+            const mStopLoss = document.getElementById('resStopLoss');
+            const mJustification = document.getElementById('resJustification');
 
             // UI Loading State
             btn.disabled = true;
-            btnText.innerText = "Analyzing...";
+            btnText.innerText = "Analyzing Context...";
             spinner.style.display = "block";
 
-            // Show panels with empty/loading text
-            contextData.innerText = "Fetching stock, news, and community data...";
-            predictionData.innerText = "Waiting for data context...";
-            resultsArea.classList.add('visible');
+            resultsArea.classList.remove('visible');
 
             try {
                 const response = await fetch('/api/predict', {
@@ -288,20 +407,32 @@
                     throw new Error(data.detail || "Server Error");
                 }
 
-                predictionData.innerText = "Data fetched. Running LLM inference (this may take a minute)...";
+                // Color formatting logic
+                let actionColorClass = "value-neutral";
+                let actionUpper = data.action.toUpperCase();
+                if (actionUpper.includes("BUY")) actionColorClass = "value-buy";
+                if (actionUpper.includes("SELL") || actionUpper.includes("IGNORE")) actionColorClass = "value-sell";
 
-                // Typewriter effect approach could be added here if streaming is implemented, 
-                // but since the backend returns the full generated text, we just set it.
-                contextData.innerText = data.context;
-                predictionData.innerText = data.prediction;
+                mAction.className = "metric-value " + actionColorClass;
+
+                // Update specific metrics
+                mAction.innerText = data.action;
+                mWeight.innerText = data.weight_allocation;
+                mStopLoss.innerText = data.stop_loss_price.toFixed(2);
+
+                mJustification.innerHTML = formatMarkdown(data.justification);
+
+                // Show results
+                setTimeout(() => {
+                    resultsArea.classList.add('visible');
+                }, 100);
 
             } catch (error) {
-                contextData.innerText = "Error: " + error.message;
-                predictionData.innerText = "Prediction failed.";
+                alert("Analysis failed: " + error.message);
             } finally {
                 // Reset UI
                 btn.disabled = false;
-                btnText.innerText = "Analyze & Predict";
+                btnText.innerText = "Execute Analysis";
                 spinner.style.display = "none";
             }
         }

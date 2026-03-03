@@ -3,7 +3,10 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
-from risk_manager import RiskManagerAgent
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from agents.risk_manager import RiskManagerAgent
 
 st.set_page_config(page_title="Quantamental AI Agent", layout="wide")
 

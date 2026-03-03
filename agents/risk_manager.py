@@ -1,6 +1,9 @@
 # c:\Finance\Finance-Agent\risk_manager.py
-from analyst_agent import AnalystAgent
-from chartist_agent import ChartistAgent
+from .analyst_agent import AnalystAgent
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from .chartist_agent import ChartistAgent
 from pydantic import BaseModel, Field
 
 # Define an output schema for XAI report

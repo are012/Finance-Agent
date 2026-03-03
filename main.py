@@ -2,8 +2,8 @@
 import time
 import schedule
 from datetime import datetime
-from data_loader import StandardDataLoader
-from llm_engine import QwenPredictor
+from data.data_loader import StandardDataLoader
+from core.llm_engine import QwenPredictor
 
 # Configuration
 TICKER = "AAPL" # Change to target ticker (e.g., TSLA, NVDA, KRX codes like 005930.KS)

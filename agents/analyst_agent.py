@@ -1,10 +1,13 @@
 # c:\Finance\Finance-Agent\analyst_agent.py
 import chromadb
 from chromadb.config import Settings
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from sentence_transformers import SentenceTransformer
 from langchain.prompts import PromptTemplate
 from langchain_community.llms import OpenAI # Replace with Qwen if integrated
-from llm_engine import LLMEngine # Assuming local Qwen 3.5 engine exists
+from core.llm_engine import LLMEngine # Assuming local Qwen 3.5 engine exists
 from kiwipiepy import Kiwi
 from rank_bm25 import BM25Okapi
 

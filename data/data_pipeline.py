@@ -1,6 +1,9 @@
 # c:\Finance\Finance-Agent\data_pipeline.py
 import yfinance as yf
-from analyst_agent import FinanceVectorDB
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from agents.analyst_agent import FinanceVectorDB
 import datetime
 import uuid
 

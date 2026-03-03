@@ -6,8 +6,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
 
-from data_loader import StandardDataLoader
-from llm_engine import QwenPredictor
+from data.data_loader import StandardDataLoader
+from core.llm_engine import QwenPredictor
 
 app = FastAPI(title="Finance Agent API")
 

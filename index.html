@@ -1,0 +1,311 @@
+<!-- c:\Finance\Finance-Agent\index.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Finance Predictor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            width: 100%;
+            padding: 2rem 0;
+            text-align: center;
+            background: linear-gradient(180deg, rgba(30, 41, 59, 1) 0%, rgba(15, 23, 42, 0) 100%);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin: 0;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(167, 139, 250, 0.3);
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1000px;
+            margin: 2rem auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .input-card {
+            background-color: var(--surface-color);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .input-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px var(--accent-glow);
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            font-size: 1.2rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+        }
+
+        button {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background-color: var(--border-color);
+            cursor: not-allowed;
+            color: var(--text-muted);
+        }
+
+        .results-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .results-container.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .panel {
+            background-color: var(--surface-color);
+            padding: 1.5rem;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            max-height: 600px;
+        }
+
+        .panel h2 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            color: #e2e8f0;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .content-box {
+            flex: 1;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #cbd5e1;
+            padding-right: 0.5rem;
+        }
+
+        /* Custom Scrollbar */
+        .content-box::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .content-box::-webkit-scrollbar-track {
+            background: var(--bg-color);
+            border-radius: 4px;
+        }
+
+        .content-box::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .content-box::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        .spinner {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .btn-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 768px) {
+            .results-container {
+                grid-template-columns: 1fr;
+            }
+
+            .input-card {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>AI Finance Predictor</h1>
+        <p style="color: var(--text-muted); margin-top: 0.5rem;">Powered by Qwen3.5-9B</p>
+    </header>
+
+    <div class="container">
+        <div class="input-card">
+            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g., AAPL, TSLA, NVDA)"
+                onkeypress="handleKeyPress(event)">
+            <button id="predictBtn" onclick="runPrediction()">
+                <div class="btn-content">
+                    <span id="btnText">Analyze & Predict</span>
+                    <div id="spinner" class="spinner"></div>
+                </div>
+            </button>
+        </div>
+
+        <div id="resultsArea" class="results-container">
+            <div class="panel">
+                <h2>Raw Context Data</h2>
+                <div id="contextData" class="content-box">Waiting for input...</div>
+            </div>
+            <div class="panel" style="border-top: 4px solid var(--primary-color);">
+                <h2>AI Prediction</h2>
+                <div id="predictionData" class="content-box">Waiting for inference...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                runPrediction();
+            }
+        }
+
+        async function runPrediction() {
+            const ticker = document.getElementById('tickerInput').value.trim();
+            if (!ticker) return;
+
+            const btn = document.getElementById('predictBtn');
+            const btnText = document.getElementById('btnText');
+            const spinner = document.getElementById('spinner');
+            const resultsArea = document.getElementById('resultsArea');
+            const contextData = document.getElementById('contextData');
+            const predictionData = document.getElementById('predictionData');
+
+            // UI Loading State
+            btn.disabled = true;
+            btnText.innerText = "Analyzing...";
+            spinner.style.display = "block";
+
+            // Show panels with empty/loading text
+            contextData.innerText = "Fetching stock, news, and community data...";
+            predictionData.innerText = "Waiting for data context...";
+            resultsArea.classList.add('visible');
+
+            try {
+                const response = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: ticker })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "Server Error");
+                }
+
+                predictionData.innerText = "Data fetched. Running LLM inference (this may take a minute)...";
+
+                // Typewriter effect approach could be added here if streaming is implemented, 
+                // but since the backend returns the full generated text, we just set it.
+                contextData.innerText = data.context;
+                predictionData.innerText = data.prediction;
+
+            } catch (error) {
+                contextData.innerText = "Error: " + error.message;
+                predictionData.innerText = "Prediction failed.";
+            } finally {
+                // Reset UI
+                btn.disabled = false;
+                btnText.innerText = "Analyze & Predict";
+                spinner.style.display = "none";
+            }
+        }
+    </script>
+</body>
+
+</html>

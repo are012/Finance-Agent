@@ -5,12 +5,42 @@ from sentence_transformers import SentenceTransformer
 from langchain.prompts import PromptTemplate
 from langchain_community.llms import OpenAI # Replace with Qwen if integrated
 from llm_engine import LLMEngine # Assuming local Qwen 3.5 engine exists
+from kiwipiepy import Kiwi
+from rank_bm25 import BM25Okapi
 
 class FinanceVectorDB:
     def __init__(self, db_path="./chroma_db"):
         self.client = chromadb.PersistentClient(path=db_path)
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # 1. Update Dense Retrieval Model -> Jina Embeddings v5 Text Small
+        self.embedding_model = SentenceTransformer(
+            'jinaai/jina-embeddings-v5-text-small', 
+            trust_remote_code=True
+        )
         self.collection = self.client.get_or_create_collection(name="finance_reports")
+        
+        # 2. Setup Sparse Retrieval (BM25 & Kiwi)
+        self.kiwi = Kiwi()
+        self.corpus = []
+        self.ids = []
+        self.bm25 = None
+        
+        self._load_and_build_bm25()
+
+    def _tokenize(self, text):
+        # 한국어 및 영어/숫자 형태소 분석을 통해 핵심 키워드 토큰만 추출
+        # N(명사), V(동사군), S(기호/문자/외국어), M(수식언) 계열 사용
+        tokens = self.kiwi.tokenize(text)
+        return [t.form for t in tokens if t.tag.startswith(('N', 'V', 'S', 'M'))]
+
+    def _load_and_build_bm25(self):
+        existing_data = self.collection.get()
+        if existing_data and existing_data['documents']:
+            self.corpus = existing_data['documents']
+            self.ids = existing_data['ids']
+            
+            tokenized_corpus = [self._tokenize(doc) for doc in self.corpus]
+            if tokenized_corpus:
+                self.bm25 = BM25Okapi(tokenized_corpus)
 
     def add_documents(self, documents, metadatas, ids):
         embeddings = self.embedding_model.encode(documents).tolist()
@@ -20,14 +50,82 @@ class FinanceVectorDB:
             metadatas=metadatas,
             ids=ids
         )
+        
+        # Update BM25 corpus internally
+        self.corpus.extend(documents)
+        self.ids.extend(ids)
+        
+        # Rebuild BM25
+        tokenized_corpus = [self._tokenize(doc) for doc in self.corpus]
+        if tokenized_corpus:
+            self.bm25 = BM25Okapi(tokenized_corpus)
 
-    def query_documents(self, query_text, n_results=3):
+    def query_documents(self, query_text, n_results=3, alpha=0.5):
+        """
+        Hybrid Search: alpha=1.0 (Dense만), alpha=0.0 (BM25만).
+        """
+        if not self.ids or self.bm25 is None:
+            return {"documents": [], "metadatas": [], "ids": []}
+
+        # 1. Dense Search Scores
         query_embedding = self.embedding_model.encode([query_text]).tolist()
-        results = self.collection.query(
+        dense_results = self.collection.query(
             query_embeddings=query_embedding,
-            n_results=n_results
+            n_results=len(self.ids)  # Fetch all to compute proper scaling
         )
-        return results
+        
+        dense_scores_map = {}
+        if dense_results['ids'] and dense_results['ids'][0]:
+            for doc_id, dist in zip(dense_results['ids'][0], dense_results['distances'][0]):
+                # Convert L2 distance to Similarity using 1 / (1 + dist)
+                dense_scores_map[doc_id] = 1.0 / (1.0 + dist)
+        
+        # 2. Sparse Search Scores (BM25)
+        sparse_scores_map = {}
+        tokenized_query = self._tokenize(query_text)
+        bm25_scores = self.bm25.get_scores(tokenized_query)
+        for doc_id, score in zip(self.ids, bm25_scores):
+            sparse_scores_map[doc_id] = score
+            
+        # 3. Min-Max Scaling
+        def min_max_dict(score_dict):
+            vals = list(score_dict.values())
+            if not vals: return {}
+            min_v, max_v = min(vals), max(vals)
+            if max_v == min_v: return {k: 0.5 for k in score_dict}
+            return {k: (v - min_v) / (max_v - min_v) for k, v in score_dict.items()}
+            
+        norm_dense = min_max_dict(dense_scores_map)
+        norm_sparse = min_max_dict(sparse_scores_map)
+        
+        hybrid_scores = []
+        for doc_id in self.ids:
+            s_dense = norm_dense.get(doc_id, 0.0)
+            s_sparse = norm_sparse.get(doc_id, 0.0)
+            final_score = (alpha * s_dense) + ((1.0 - alpha) * s_sparse)
+            hybrid_scores.append((doc_id, final_score))
+            
+        # Sort descending by hybrid score
+        hybrid_scores.sort(key=lambda x: x[1], reverse=True)
+        top_k_ids = [doc_id for doc_id, _ in hybrid_scores[:n_results]]
+        
+        # 4. Fetch and sort documents
+        final_results = self.collection.get(ids=top_k_ids)
+        doc_idx_map = {id_: idx for idx, id_ in enumerate(final_results['ids'])}
+        
+        sorted_docs, sorted_meta, valid_ids = [], [], []
+        for tgt_id in top_k_ids:
+            if tgt_id in doc_idx_map:
+                idx = doc_idx_map[tgt_id]
+                sorted_docs.append(final_results['documents'][idx])
+                sorted_meta.append(final_results['metadatas'][idx])
+                valid_ids.append(tgt_id)
+
+        return {
+            "documents": [sorted_docs],
+            "metadatas": [sorted_meta],
+            "ids": [valid_ids]
+        }
 
 class AnalystAgent:
     def __init__(self, vector_db_path="./chroma_db"):

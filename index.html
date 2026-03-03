@@ -310,14 +310,18 @@
         <!-- Search Wrapper -->
         <div class="search-wrapper" id="searchWrapper">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round" style="color: #475569; margin-left: 0.5rem;">
+                stroke-linecap="round" stroke-linejoin="round"
+                style="color: #475569; margin-left: 0.5rem; flex-shrink: 0;">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g. AAPL, NVDA)"
+            <input type="text" id="apiUrlInput" placeholder="API Server (e.g. /api/predict)" value="/api/predict"
+                title="Set to absolute URL (e.g. https://my-backend.com/api/predict) if hosting backend separately."
+                style="flex: 0.5; border-right: 1px solid var(--border-color); padding-right: 1rem; border-radius: 0;">
+            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g. AAPL)"
                 onfocus="document.getElementById('searchWrapper').classList.add('focus')"
                 onblur="document.getElementById('searchWrapper').classList.remove('focus')"
-                onkeypress="handleKeyPress(event)">
+                onkeypress="handleKeyPress(event)" style="padding-left: 1rem;">
             <button id="predictBtn" onclick="runAnalysis()">
                 <span id="btnText">Execute Analysis</span>
                 <div id="spinner" class="spinner"></div>
@@ -395,7 +399,9 @@
             resultsArea.classList.remove('visible');
 
             try {
-                const response = await fetch('/api/predict', {
+                const apiUrl = document.getElementById('apiUrlInput').value.trim() || '/api/predict';
+
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ticker: ticker })

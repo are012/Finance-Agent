@@ -1,6 +1,7 @@
 # c:\Finance\Finance-Agent\server.py
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -10,6 +11,15 @@ from data.data_loader import StandardDataLoader
 from agents.risk_manager import RiskManagerAgent
 
 app = FastAPI(title="Finance Agent API")
+
+# Add CORS so frontend can be hosted independently
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, replace with specific domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 print("Initializing Agents...")
 risk_manager = None
@@ -55,7 +65,7 @@ async def predict_stock(req: PredictRequest):
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html")
+    frontend_path = os.path.join(os.path.dirname(__file__), "..", "index.html")
     with open(frontend_path, "r", encoding="utf-8") as f:
         return f.read()
 

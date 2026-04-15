@@ -40,7 +40,7 @@ class MarketDataService:
             elif normalized.isdigit() and len(normalized) == 6:
                 code = normalized
                 data_ticker = f"{normalized}.KS"
-                notes.append("KR 시장은 접미사가 없으면 기본적으로 코스피(.KS)로 해석합니다.")
+                notes.append("KR 시장은 접미사가 없으면 기본적으로 코스피(.KS)로 해석합니다. 코스닥 종목은 086520.KQ처럼 .KQ를 붙여주세요.")
             else:
                 code = normalized
             tradingview_symbol = f"KRX:{code}"

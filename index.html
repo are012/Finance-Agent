@@ -1057,7 +1057,7 @@
                     <div class="toolbar-grid">
                         <div class="field-group">
                             <label for="ticker-input">종목 코드</label>
-                            <input id="ticker-input" type="text" value="NVDA" placeholder="예: NVDA 또는 005930">
+                            <input id="ticker-input" type="text" value="NVDA" placeholder="예: NVDA, 005930.KS, 086520.KQ">
                         </div>
                         <div class="field-group">
                             <label for="market-select">시장</label>
@@ -1072,16 +1072,30 @@
                         </div>
                     </div>
 
-                    <div style="margin-top: 16px;">
+                    <div id="watchlist-row" style="margin-top: 16px;">
                         <div class="caption" style="margin-bottom: 10px;">빠른 전환</div>
-                        <div class="chip-row" id="watchlist-row">
+                        <div class="caption" style="margin-bottom: 8px;">미국 주요 종목</div>
+                        <div class="chip-row">
                             <button class="chip active" data-market="usa_equity" data-ticker="NVDA">NVDA</button>
                             <button class="chip" data-market="usa_equity" data-ticker="AAPL">AAPL</button>
                             <button class="chip" data-market="usa_equity" data-ticker="MSFT">MSFT</button>
                             <button class="chip" data-market="usa_equity" data-ticker="TSLA">TSLA</button>
-                            <button class="chip" data-market="kr_equity" data-ticker="005930">005930</button>
-                            <button class="chip" data-market="kr_equity" data-ticker="000660">000660</button>
                         </div>
+                        <div class="caption" style="margin: 12px 0 8px;">코스피 주요 종목</div>
+                        <div class="chip-row">
+                            <button class="chip" data-market="kr_equity" data-ticker="005930.KS">삼성전자</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="000660.KS">SK하이닉스</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="035420.KS">NAVER</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="373220.KS">LG에너지솔루션</button>
+                        </div>
+                        <div class="caption" style="margin: 12px 0 8px;">코스닥 주요 종목</div>
+                        <div class="chip-row">
+                            <button class="chip" data-market="kr_equity" data-ticker="086520.KQ">에코프로</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="247540.KQ">에코프로비엠</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="196170.KQ">알테오젠</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="035900.KQ">JYP Ent.</button>
+                        </div>
+                        <div class="caption" style="margin-top: 10px;">직접 입력할 때 코스피는 `.KS`, 코스닥은 `.KQ`를 붙이면 더 정확하게 인식합니다.</div>
                     </div>
 
                     <div class="chart-shell">

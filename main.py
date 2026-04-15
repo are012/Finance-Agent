@@ -28,6 +28,16 @@ def _parse_key_value_pairs(items: list[str]) -> dict[str, str]:
 def _print_json(payload: Any) -> None:
     if hasattr(payload, "model_dump"):
         payload = payload.model_dump(mode="json")
+    elif isinstance(payload, list):
+        payload = [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            for item in payload
+        ]
+    elif isinstance(payload, dict):
+        payload = {
+            key: value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+            for key, value in payload.items()
+        }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 

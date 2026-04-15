@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import pandas as pd
-
 from ..models import StrategyParameter, StrategyRequest
 from .base import StrategySpec
+from .signal_utils import rsi_mean_reversion_positions
 
 
 class RsiMeanReversionStrategy(StrategySpec):
@@ -105,21 +104,10 @@ class {self.lean_class_name}(QCAlgorithm):
         exit_threshold = float(parameters["exit_threshold"])
         position_size = float(parameters["position_size"])
 
-        delta = frame["close"].diff()
-        gains = delta.clip(lower=0)
-        losses = -delta.clip(upper=0)
-        avg_gain = gains.ewm(alpha=1 / rsi_period, adjust=False).mean()
-        avg_loss = losses.ewm(alpha=1 / rsi_period, adjust=False).mean()
-        rs = avg_gain / avg_loss.replace(0, pd.NA)
-        rsi = 100 - (100 / (1 + rs))
-
-        positions: list[float] = []
-        current_position = 0.0
-        for value in rsi.fillna(50.0):
-            if current_position == 0.0 and value <= oversold_threshold:
-                current_position = position_size
-            elif current_position > 0.0 and value >= exit_threshold:
-                current_position = 0.0
-            positions.append(current_position)
-
-        return pd.Series(positions, index=frame.index, dtype=float)
+        return rsi_mean_reversion_positions(
+            close=frame["close"],
+            rsi_period=rsi_period,
+            oversold_threshold=oversold_threshold,
+            exit_threshold=exit_threshold,
+            position_size=position_size,
+        )

@@ -11,3 +11,5 @@ dependencies:
   - requests=2.31.0
   - uvicorn=0.28.0
   - yfinance=0.2.52
+  - pip:
+      - finance-datareader==0.9.96

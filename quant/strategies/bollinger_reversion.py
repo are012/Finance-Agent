@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import pandas as pd
-
 from ..models import StrategyParameter, StrategyRequest
 from .base import StrategySpec
+from .signal_utils import bollinger_mean_reversion_positions
 
 
 class BollingerMeanReversionStrategy(StrategySpec):
@@ -99,21 +98,9 @@ class {self.lean_class_name}(QCAlgorithm):
         band_width = float(parameters["band_width"])
         position_size = float(parameters["position_size"])
 
-        mean = frame["close"].rolling(window=lookback_period).mean()
-        std = frame["close"].rolling(window=lookback_period).std(ddof=0)
-        lower_band = mean - (std * band_width)
-
-        positions: list[float] = []
-        current_position = 0.0
-        for close, mid, lower in zip(frame["close"], mean, lower_band, strict=False):
-            if pd.isna(mid) or pd.isna(lower):
-                positions.append(0.0)
-                continue
-
-            if current_position == 0.0 and close <= lower:
-                current_position = position_size
-            elif current_position > 0.0 and close >= mid:
-                current_position = 0.0
-            positions.append(current_position)
-
-        return pd.Series(positions, index=frame.index, dtype=float)
+        return bollinger_mean_reversion_positions(
+            close=frame["close"],
+            lookback_period=lookback_period,
+            band_width=band_width,
+            position_size=position_size,
+        )

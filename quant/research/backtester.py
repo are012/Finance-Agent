@@ -87,7 +87,7 @@ class BacktestEngine:
             equity_curve=equity_curve,
             trades=trades,
             notes=[
-                f"Fetched {len(frame)} bars from yfinance ticker {context.data_ticker}.",
+                f"{context.data_ticker} 기준으로 {len(frame)}개 봉 데이터를 불러왔습니다.",
                 "Strategy equity uses daily close-to-close returns with next-bar position application.",
                 *context.notes,
             ],

@@ -62,6 +62,8 @@ pip install -r requirements.txt
 
 - `bollinger_reversion`
 - `buy_hold`
+- `macd_cross`
+- `adaptive_signal_ensemble`
 - `sma_cross`
 - `ema_cross`
 - `rsi_reversion`

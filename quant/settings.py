@@ -10,6 +10,7 @@ class QuantFrameworkSettings(BaseModel):
     runtime_dir: Path
     lean_projects_dir: Path
     run_registry_file: Path
+    market_data_cache_dir: Path
     kis_live_base_url: str = "https://openapi.koreainvestment.com:9443"
     kis_paper_base_url: str = "https://openapivts.koreainvestment.com:29443"
     kis_order_cash_path: str = "/uapi/domestic-stock/v1/trading/order-cash"
@@ -17,6 +18,7 @@ class QuantFrameworkSettings(BaseModel):
     def ensure_directories(self) -> None:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.lean_projects_dir.mkdir(parents=True, exist_ok=True)
+        self.market_data_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def kis_env_vars(self) -> list[str]:
         return [
@@ -48,4 +50,5 @@ def load_settings(project_root: Path | None = None) -> QuantFrameworkSettings:
         runtime_dir=runtime_dir,
         lean_projects_dir=runtime_dir / "lean_projects",
         run_registry_file=runtime_dir / "runs.json",
+        market_data_cache_dir=runtime_dir / "market_data_cache",
     )

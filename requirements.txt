@@ -5,3 +5,4 @@ numpy==1.26.4
 requests==2.31.0
 uvicorn==0.28.0
 yfinance==0.2.52
+finance-datareader==0.9.96

@@ -1,0 +1,10 @@
+name: finance-agent
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - fastapi=0.110.0
+  - pydantic=2.6.3
+  - requests=2.31.0
+  - uvicorn=0.28.0

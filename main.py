@@ -1,75 +1,135 @@
-# c:\Finance\Finance-Agent\main.py
-import time
-import schedule
-from datetime import datetime
-from data.data_loader import StandardDataLoader
-from core.llm_engine import QwenPredictor
+from __future__ import annotations
 
-# Configuration
-TICKER = "AAPL" # Change to target ticker (e.g., TSLA, NVDA, KRX codes like 005930.KS)
-MODEL_ID = "Qwen/Qwen3.5-9B" # Ensure you have requested access / correct repo name on HF
-CHECK_INTERVAL_HOURS = 4
+import argparse
+import json
+from pathlib import Path
+from typing import Any
 
-class TradingBot:
-    def __init__(self):
-        self.data_loader = StandardDataLoader(ticker=TICKER)
-        self.predictor = None # Lazy load to save resources if testing
-        
-    def initialize_llm(self):
-        if self.predictor is None:
-            self.predictor = QwenPredictor(model_name=MODEL_ID, use_4bit=True)
+import uvicorn
 
-    def run_prediction_cycle(self):
-        print(f"\n--- Starting Prediction Cycle for {TICKER} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
-        
-        try:
-            # 1. Fetch latest data
-            print("Fetching latest data (Stock, News, SNS)...")
-            context = self.data_loader.compile_all_data()
-            print("Data fetching complete. Analyzing...")
-            
-            # 2. Init LLM
-            self.initialize_llm()
-            
-            # 3. Generate Prediction
-            prediction = self.predictor.generate_prediction(TICKER, context)
-            
-            # 4. Save Prediction Result
-            self.save_result(context, prediction)
-            print("Prediction Cycle Complete.\n")
-            
-        except Exception as e:
-            print(f"Error during prediction cycle: {e}")
+from quant.models import AccountMode, OrderIntent, OrderSide, StrategyRequest
+from quant.runtime.service import QuantFrameworkService
 
-    def save_result(self, context, prediction):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"prediction_{TICKER}_{timestamp}.md"
-        
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(f"# Financial Prediction Report - {TICKER}\n")
-            f.write(f"**Date/Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            f.write("## 1. Input Data Context\n```text\n")
-            f.write(context)
-            f.write("\n```\n\n")
-            f.write("## 2. LLM Analysis & Prediction\n")
-            f.write(prediction)
-            
-        print(f"Saved report to {filename}")
 
-def main():
-    bot = TradingBot()
-    
-    # Run once immediately
-    bot.run_prediction_cycle()
-    
-    # Schedule repeating tasks
-    schedule.every(CHECK_INTERVAL_HOURS).hours.do(bot.run_prediction_cycle)
-    
-    print(f"Bot scheduled to run every {CHECK_INTERVAL_HOURS} hours. Press Ctrl+C to exit.")
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
+def _parse_key_value_pairs(items: list[str]) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit(f"Invalid parameter '{item}'. Use key=value format.")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            raise SystemExit(f"Invalid parameter '{item}'. Empty keys are not allowed.")
+        pairs[key] = value
+    return pairs
+
+
+def _print_json(payload: Any) -> None:
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(mode="json")
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Lean + KIS quant framework CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    serve_parser = subparsers.add_parser("serve-api", help="Run the FastAPI server.")
+    serve_parser.add_argument("--host", default="0.0.0.0")
+    serve_parser.add_argument("--port", type=int, default=8000)
+    serve_parser.add_argument("--reload", action="store_true")
+
+    subparsers.add_parser("framework-info", help="Print framework metadata.")
+    subparsers.add_parser("list-strategies", help="List available strategy templates.")
+    subparsers.add_parser("list-runs", help="List generated Lean runs.")
+
+    project_parser = subparsers.add_parser("create-project", help="Generate a Lean project scaffold.")
+    project_parser.add_argument("--strategy-key", default="sma_cross")
+    project_parser.add_argument("--ticker", required=True)
+    project_parser.add_argument("--market", default="usa_equity")
+    project_parser.add_argument("--start-date", default="2023-01-01")
+    project_parser.add_argument("--end-date")
+    project_parser.add_argument("--resolution", default="DAILY")
+    project_parser.add_argument("--initial-cash", type=float, default=100000.0)
+    project_parser.add_argument("--tag", action="append", default=[])
+    project_parser.add_argument("--param", action="append", default=[])
+
+    preview_parser = subparsers.add_parser("preview-order", help="Preview a KIS order payload.")
+    preview_parser.add_argument("--ticker", required=True)
+    preview_parser.add_argument("--side", choices=["buy", "sell"], required=True)
+    preview_parser.add_argument("--quantity", type=int, required=True)
+    preview_parser.add_argument("--order-type", choices=["market", "limit"], default="market")
+    preview_parser.add_argument("--price", type=float)
+    preview_parser.add_argument("--account-mode", choices=["paper", "live"], default="paper")
+    preview_parser.add_argument("--strategy-key")
+
+    submit_parser = subparsers.add_parser("submit-order", help="Submit or dry-run a KIS order.")
+    submit_parser.add_argument("--ticker", required=True)
+    submit_parser.add_argument("--side", choices=["buy", "sell"], required=True)
+    submit_parser.add_argument("--quantity", type=int, required=True)
+    submit_parser.add_argument("--order-type", choices=["market", "limit"], default="market")
+    submit_parser.add_argument("--price", type=float)
+    submit_parser.add_argument("--account-mode", choices=["paper", "live"], default="paper")
+    submit_parser.add_argument("--strategy-key")
+    submit_parser.add_argument("--execute", action="store_true", help="Actually call the KIS order endpoint.")
+
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.command == "serve-api":
+        uvicorn.run("api.server:app", host=args.host, port=args.port, reload=args.reload)
+        return
+
+    service = QuantFrameworkService(project_root=Path.cwd())
+
+    if args.command == "framework-info":
+        _print_json(service.framework_info())
+        return
+
+    if args.command == "list-strategies":
+        _print_json(service.list_strategies())
+        return
+
+    if args.command == "list-runs":
+        _print_json(service.list_runs())
+        return
+
+    if args.command == "create-project":
+        request = StrategyRequest(
+            strategy_key=args.strategy_key,
+            ticker=args.ticker,
+            market=args.market,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            resolution=args.resolution,
+            initial_cash=args.initial_cash,
+            parameters=_parse_key_value_pairs(args.param),
+            tags=args.tag,
+        )
+        _print_json(service.create_lean_project(request))
+        return
+
+    if args.command in {"preview-order", "submit-order"}:
+        intent = OrderIntent(
+            ticker=args.ticker,
+            side=OrderSide(args.side),
+            quantity=args.quantity,
+            order_type=args.order_type,
+            price=args.price,
+            strategy_key=args.strategy_key,
+            account_mode=AccountMode(args.account_mode),
+        )
+        if args.command == "preview-order":
+            _print_json(service.preview_kis_order(intent))
+        else:
+            _print_json(service.submit_kis_order(intent, dry_run=not args.execute))
+        return
+
 
 if __name__ == "__main__":
     main()

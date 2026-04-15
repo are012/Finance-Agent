@@ -1,770 +1,132 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantamental AI Platform</title>
-    <!-- Fonts -->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;600&family=Fira+Code:wght@400;500&display=swap"
-        rel="stylesheet">
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Ace Editor -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/theme-dracula.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/mode-python.min.js"></script>
-
-    <!-- Marked API -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
+    <title>Lean + KIS Framework</title>
     <style>
         :root {
-            --bg-color: #0b0f19;
-            --sidebar-color: #101522;
-            --surface-color: #1a2133;
-            --surface-hover: #222b40;
-            --primary-color: #3b82f6;
-            --primary-glow: rgba(59, 130, 246, 0.6);
-            --success-color: #10b981;
-            --danger-color: #ef4444;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: #2a3441;
-
-            --sidebar-width: 280px;
+            --bg: #f5f0e8;
+            --ink: #1e2a24;
+            --accent: #0b6e4f;
+            --panel: rgba(255, 255, 255, 0.72);
+            --line: rgba(30, 42, 36, 0.14);
         }
 
         * {
             box-sizing: border-box;
-            margin: 0;
-            padding: 0;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(11, 110, 79, 0.16), transparent 32%),
+                radial-gradient(circle at bottom right, rgba(180, 120, 40, 0.14), transparent 28%),
+                linear-gradient(135deg, #f7f2ea, #efe3d1 54%, #eadfce);
+            font-family: "IBM Plex Sans", "Noto Sans KR", sans-serif;
         }
 
-        /* ----- SIDEBAR ----- */
-        .sidebar {
-            width: var(--sidebar-width);
-            background-color: var(--sidebar-color);
-            border-right: 1px solid var(--border-color);
-            display: flex;
-            flex-direction: column;
-            padding: 2rem 1rem;
-            z-index: 10;
+        main {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 48px 24px 72px;
         }
 
-        .logo-area {
-            text-align: center;
-            margin-bottom: 2.5rem;
+        .hero {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 32px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 18px 50px rgba(45, 38, 26, 0.08);
         }
 
-        .logo-area h1 {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.8rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #60a5fa, #c084fc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        h1 {
+            font-family: "IBM Plex Serif", "Noto Serif KR", serif;
+            font-size: clamp(2.2rem, 6vw, 4rem);
+            line-height: 1.05;
+            margin: 0 0 12px;
+            letter-spacing: -0.04em;
         }
 
-        .nav-items {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            flex: 1;
+        p.lead {
+            font-size: 1.1rem;
+            max-width: 720px;
+            margin: 0;
         }
 
-        .nav-item {
-            padding: 1rem;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            font-weight: 500;
-            color: var(--text-muted);
-        }
-
-        .nav-item:hover {
-            background-color: var(--surface-color);
-            color: var(--text-main);
-        }
-
-        .nav-item.active {
-            background-color: rgba(59, 130, 246, 0.15);
-            color: var(--primary-color);
-            box-shadow: inset 3px 0 0 var(--primary-color);
-        }
-
-        .global-ticker {
-            margin-top: auto;
-            background: var(--surface-color);
-            padding: 1rem;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-        }
-
-        .global-ticker label {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0.5rem;
-            display: block;
-        }
-
-        .global-ticker input {
-            width: 100%;
-            padding: 0.8rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-color);
-            color: white;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .global-ticker input:focus {
-            border-color: var(--primary-color);
-        }
-
-        /* ----- MAIN CONTENT ----- */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            overflow-y: auto;
-            scroll-behavior: smooth;
-        }
-
-        /* TopBar */
-        .topbar {
-            height: 70px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            padding: 0 2rem;
-            background: rgba(11, 15, 25, 0.8);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 5;
-        }
-
-        .topbar h2 {
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        /* Views */
-        .view-section {
-            display: none;
-            padding: 2rem;
-            flex: 1;
-            animation: fadeIn 0.4s ease;
-        }
-
-        .view-section.active {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* UI Utilities */
-        .card {
-            background-color: var(--surface-color);
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            padding: 1.5rem;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .btn {
-            padding: 0.8rem 1.5rem;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            font-family: 'Inter', sans-serif;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: white;
-            background: var(--primary-color);
-        }
-
-        .btn:hover:not(:disabled) {
-            background: #2563eb;
-            box-shadow: 0 4px 15px var(--primary-glow);
-            transform: translateY(-1px);
-        }
-
-        .btn:disabled {
-            background: var(--border-color);
-            color: var(--text-muted);
-            cursor: not-allowed;
-        }
-
-        /* --- DASHBOARD TAB --- */
-        .metrics-grid {
+        .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 1.5rem;
+            gap: 16px;
+            margin-top: 28px;
         }
 
-        .metric-card {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            text-align: center;
+        .card {
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 18px;
         }
 
-        .metric-label {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .metric-value {
-            font-family: 'Outfit', sans-serif;
-            font-size: 2.2rem;
-            font-weight: 800;
-        }
-
-        .value-buy {
-            color: var(--success-color);
-        }
-
-        .value-sell {
-            color: var(--danger-color);
-        }
-
-        .value-neutral {
-            color: #f59e0b;
-        }
-
-        .justification-content {
-            font-size: 1.05rem;
-            line-height: 1.7;
-            color: #cbd5e1;
-            padding: 1rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-        }
-
-        /* --- CHART TAB --- */
-        #tv_chart_container {
-            width: 100%;
-            height: 600px;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-        }
-
-        /* --- CHAT TAB --- */
-        .chat-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            max-height: 700px;
-        }
-
-        .chat-history {
-            flex: 1;
-            overflow-y: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1rem;
-            background: var(--bg-color);
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .chat-message {
-            max-width: 80%;
-            padding: 1rem;
-            border-radius: 8px;
-            line-height: 1.5;
-        }
-
-        .chat-user {
-            align-self: flex-end;
-            background: var(--primary-color);
-            color: white;
-            border-bottom-right-radius: 0;
-        }
-
-        .chat-ai {
-            align-self: flex-start;
-            background: var(--surface-hover);
-            color: #e2e8f0;
-            border-bottom-left-radius: 0;
-            border: 1px solid var(--border-color);
-        }
-
-        .chat-input-area {
-            display: flex;
-            gap: 1rem;
-        }
-
-        .chat-input-area input {
-            flex: 1;
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            background: var(--surface-color);
-            color: white;
-            outline: none;
+        .card h2 {
             font-size: 1rem;
+            margin: 0 0 10px;
+            color: var(--accent);
         }
 
-        /* --- STUDIO TAB --- */
-        .studio-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            height: 600px;
-        }
-
-        #editor {
+        code {
+            display: inline-block;
+            background: rgba(17, 24, 39, 0.08);
             border-radius: 8px;
-            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            font-size: 0.95rem;
+            margin: 4px 0;
         }
 
-        .studio-results {
-            background: var(--bg-color);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
+        ul {
+            margin: 12px 0 0;
+            padding-left: 18px;
         }
 
-        .log-box {
-            background: #000;
-            color: #0f0;
-            font-family: 'Fira Code', monospace;
-            padding: 1rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            white-space: pre-wrap;
-            flex: 1;
-            overflow-y: auto;
-            margin-top: 1rem;
-        }
-
-        .backtest-metrics {
-            display: flex;
-            justify-content: space-around;
-            background: var(--surface-color);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-        }
-
-        /* Spinner for Buttons */
-        .spinner {
-            display: none;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+        li {
+            margin: 8px 0;
         }
     </style>
 </head>
-
 <body>
-
-    <!-- Sidebar -->
-    <nav class="sidebar">
-        <div class="logo-area">
-            <h1>QuantAI</h1>
-        </div>
-
-        <div class="nav-items">
-            <div class="nav-item active" onclick="switchTab('dashboard')" id="nav-dashboard">
-                <i class="fa-solid fa-gauge"></i> 대시보드
-            </div>
-            <div class="nav-item" onclick="switchTab('chart')" id="nav-chart">
-                <i class="fa-solid fa-chart-candlestick"></i> 증권사 통합 차트
-            </div>
-            <div class="nav-item" onclick="switchTab('chat')" id="nav-chat">
-                <i class="fa-brands fa-rocketchat"></i> AI 퀀트 인사이트
-            </div>
-            <div class="nav-item" onclick="switchTab('studio')" id="nav-studio">
-                <i class="fa-solid fa-code"></i> 자동매매 백테스팅
-            </div>
-        </div>
-
-        <div class="global-ticker">
-            <label for="globalTicker">분석 종목 (티커)</label>
-            <input type="text" id="globalTicker" value="NVDA" title="입력 시 차트를 포함한 모든 탭에 적용됩니다."
-                onchange="updateTicker()">
-        </div>
-
-        <div class="global-ticker" style="margin-top: 1rem;">
-            <label for="apiUrl">API 서버 주소 (Backend)</label>
-            <input type="text" id="apiUrl" value="/api" placeholder="예: https://myapi.com/api">
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <main class="main-content">
-        <div class="topbar">
-            <h2 id="topbar-title">퀀트멘탈 대시보드 분석</h2>
-        </div>
-
-        <!-- 1. DASHBOARD VIEW -->
-        <section class="view-section active" id="view-dashboard">
-            <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h3 style="margin-bottom: 0.5rem;">선택 종목 퀀트멘탈 분석 실행</h3>
-                    <p style="color: var(--text-muted); font-size: 0.9rem;">RAG (보고서 요약) 및 차트 패턴 알고리즘 기반 분석을 구동합니다.</p>
-                </div>
-                <button class="btn" id="btn-run-dash" onclick="runDashboard()">
-                    <span>파이프라인 실행</span>
-                    <div class="spinner" id="spin-dash"></div>
-                </button>
-            </div>
-
-            <div class="card metrics-grid">
-                <div class="metric-card">
-                    <span class="metric-label">추천 포지션</span>
-                    <span class="metric-value" id="dash-action">-</span>
-                </div>
-                <div class="metric-card">
-                    <span class="metric-label">자산 배분 비중</span>
-                    <span class="metric-value"><span id="dash-weight">0</span>%</span>
-                </div>
-                <div class="metric-card">
-                    <span class="metric-label">손절선 제안가</span>
-                    <span class="metric-value">$<span id="dash-stop">0.00</span></span>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-microchip" style="color:#60a5fa;"></i> AI 의사결정 근거
-                    (Justification)</h3>
-                <div id="dash-justification" class="justification-content">파이프라인 실행 시 AI의 판단 근거가 이곳에 표시됩니다...</div>
+    <main>
+        <section class="hero">
+            <h1>Lean + KIS Quant Framework</h1>
+            <p class="lead">
+                Lean으로 전략을 연구하고 백테스트한 뒤, 승인된 주문만 KIS 어댑터로 분리 실행하는 확장형 퀀트 프레임워크입니다.
+            </p>
+            <div class="grid">
+                <article class="card">
+                    <h2>핵심 API</h2>
+                    <div><code>GET /api/quant/framework</code></div>
+                    <div><code>POST /api/quant/lean/projects</code></div>
+                    <div><code>POST /api/quant/kis/orders/preview</code></div>
+                    <div><code>POST /api/quant/kis/orders/submit</code></div>
+                </article>
+                <article class="card">
+                    <h2>CLI 예시</h2>
+                    <div><code>python3 main.py list-strategies</code></div>
+                    <div><code>python3 main.py create-project --ticker AAPL</code></div>
+                    <div><code>python3 main.py serve-api --reload</code></div>
+                </article>
+                <article class="card">
+                    <h2>기본 전략</h2>
+                    <ul>
+                        <li><code>sma_cross</code></li>
+                        <li><code>ema_cross</code></li>
+                        <li><code>rsi_reversion</code></li>
+                    </ul>
+                </article>
             </div>
         </section>
-
-
-        <!-- 2. CHART VIEW -->
-        <section class="view-section" id="view-chart" style="padding: 0;">
-            <!-- TradingView Widget Container -->
-            <div class="tradingview-widget-container" style="height: 100%; width: 100%;">
-                <div id="tradingview_chart" style="height: calc(100vh - 70px); width: 100%;"></div>
-            </div>
-        </section>
-
-
-        <!-- 3. CHAT VIEW -->
-        <section class="view-section" id="view-chat">
-            <div class="card chat-container">
-                <div class="chat-history" id="chat-history">
-                    <div class="chat-message chat-ai">
-                        <strong>QuantAI:</strong> 안녕하세요! 퀀트멘탈 투자 AI입니다. 현재 선택된 종목에 대해 기업 가치 분석(해자), 차트 기술적 반등 여부, 시장 동향
-                        등 무엇이든 질문해 주세요.
-                    </div>
-                </div>
-                <div class="chat-input-area">
-                    <input type="text" id="chat-input" placeholder="이 기업의 강점은 뭐야? 또는 추세는 어때? 처럼 질문해보세요..."
-                        onkeypress="handleChatEnter(event)">
-                    <button class="btn" id="btn-chat" onclick="sendMessage()">
-                        <i class="fa-solid fa-paper-plane"></i> 전송 <div class="spinner" id="spin-chat-btn"></div>
-                    </button>
-                </div>
-            </div>
-        </section>
-
-
-        <!-- 4. STUDIO VIEW -->
-        <section class="view-section" id="view-studio">
-            <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h3 style="margin-bottom: 0.5rem;">파이썬 백테스팅 (Python IDE)</h3>
-                    <p style="color: var(--text-muted); font-size: 0.9rem;">나만의 전략을 직접 구현해보세요. `ticker`(현재 종목명),
-                        `yf`(야후파이낸스), `pd`(판다스) 모듈이 자동으로 주입되어 있습니다.</p>
-                </div>
-                <button class="btn" id="btn-run-studio" onclick="runBacktest()">
-                    <i class="fa-solid fa-play"></i> 시뮬레이션 실행 <div class="spinner" id="spin-studio"></div>
-                </button>
-            </div>
-
-            <div class="studio-grid">
-                <!-- Editor container -->
-                <div id="editor"># 나만의 트레이딩 로직 정의
-                    print(f"현재 타겟 종목 {ticker}에 대한 전략을 실행합니다...")
-
-                    # 데이터 로딩 예시
-                    df = yf.download(ticker, period="6mo")
-                    latest_close = float(df['Close'].iloc[-1])
-
-                    print(f"마지막 종가: ${latest_close:.2f}")
-
-                    # 백테스트 성과 지표 기록 예시 (서버로 전송됨)
-                    metrics['cagr'] = "24.5%"
-                    metrics['mdd'] = "-15.2%"
-                    metrics['win_rate'] = "68%"
-
-                    print("전략 시뮬레이션 성공적으로 완료!")
-                </div>
-                <!-- Results container -->
-                <div class="studio-results">
-                    <h3>전략 성과 요약 (Metrics)</h3>
-                    <div class="backtest-metrics" style="margin-top:1rem;">
-                        <div>
-                            <div style="color:var(--text-muted); font-size:0.8rem;">연평균 수익률(CAGR)</div>
-                            <div id="bs-cagr" style="font-weight:bold; font-size:1.2rem;">-</div>
-                        </div>
-                        <div>
-                            <div style="color:var(--text-muted); font-size:0.8rem;">최대 낙폭(MDD)</div>
-                            <div id="bs-mdd" style="font-weight:bold; font-size:1.2rem; color:var(--danger-color);">-
-                            </div>
-                        </div>
-                        <div>
-                            <div style="color:var(--text-muted); font-size:0.8rem;">승률(Win Rate)</div>
-                            <div id="bs-win" style="font-weight:bold; font-size:1.2rem; color:var(--success-color);">-
-                            </div>
-                        </div>
-                    </div>
-
-                    <h3 style="margin-top:1.5rem;">콘솔 로그 (Execution Logs)</h3>
-                    <div class="log-box" id="studio-logs">실행 대기중...</div>
-                </div>
-            </div>
-        </section>
-
     </main>
-
-    <script>
-        // Global State
-        let chart = null;
-        let lineSeries = null;
-        let editor = null;
-
-        // Setup Editor
-        window.addEventListener('DOMContentLoaded', () => {
-            editor = ace.edit("editor");
-            editor.setTheme("ace/theme/dracula");
-            editor.session.setMode("ace/mode/python");
-            editor.setFontSize("14px");
-            editor.setShowPrintMargin(false);
-        });
-
-        const API_URL = () => document.getElementById('apiUrl').value.replace(/\/$/, '');
-        const currentTicker = () => document.getElementById('globalTicker').value.trim();
-
-        // Setting Script URL for TradingView Widget
-        const tvScript = document.createElement('script');
-        tvScript.type = 'text/javascript';
-        tvScript.src = 'https://s3.tradingview.com/tv.js';
-        document.head.appendChild(tvScript);
-
-        let tvWidget = null;
-
-        // View Switcher
-        function switchTab(tabId) {
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            document.getElementById('nav-' + tabId).classList.add('active');
-
-            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            document.getElementById('view-' + tabId).classList.add('active');
-
-            const titles = {
-                'dashboard': '퀀트멘탈 대시보드 (종합 분석)',
-                'chart': 'TradingView 전문 차트',
-                'chat': 'AI 투자 챗봇',
-                'studio': '파이썬 자동매매 시뮬레이터'
-            };
-            document.getElementById('topbar-title').innerText = titles[tabId];
-
-            if (tabId === 'chart') {
-                loadChart();
-            }
-        }
-
-        // 글로벌 티커 업데이트 시 차트 자동 갱신
-        function updateTicker() {
-            if (document.getElementById('view-chart').classList.contains('active')) {
-                loadChart();
-            }
-        }
-
-        /* 1. Dashboard Logic */
-        async function runDashboard() {
-            const ticker = currentTicker();
-            const btn = document.getElementById('btn-run-dash');
-            const spin = document.getElementById('spin-dash');
-
-            btn.disabled = true; spin.style.display = "block";
-
-            try {
-                const res = await fetch(`${API_URL()}/predict`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticker: ticker })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Error");
-
-                let actionColor = "value-neutral";
-                let actionUp = data.action.toUpperCase();
-                if (actionUp.includes("BUY")) actionColor = "value-buy";
-                if (actionUp.includes("SELL") || actionUp.includes("IGNORE")) actionColor = "value-sell";
-
-                document.getElementById('dash-action').className = "metric-value " + actionColor;
-                document.getElementById('dash-action').innerText = data.action;
-                document.getElementById('dash-weight').innerText = data.weight_allocation;
-                document.getElementById('dash-stop').innerText = data.stop_loss_price.toFixed(2);
-                document.getElementById('dash-justification').innerHTML = marked.parse(data.justification);
-            } catch (err) {
-                alert("Pipeline Error: " + err.message);
-            } finally {
-                btn.disabled = false; spin.style.display = "none";
-            }
-        }
-
-        /* 2. Chart Logic (TradingView Widget) */
-        function loadChart() {
-            const ticker = currentTicker();
-            if (!ticker) return;
-
-            // Remove existing widget to prevent duplicates
-            document.getElementById('tradingview_chart').innerHTML = '';
-
-            tvWidget = new TradingView.widget({
-                "autosize": true,
-                "symbol": ticker,
-                "interval": "D",
-                "timezone": "Etc/UTC",
-                "theme": "dark",
-                "style": "1",
-                "locale": "kr", // Set to Korean
-                "enable_publishing": false,
-                "backgroundColor": "#1a2133",
-                "gridColor": "rgba(42, 52, 65, 0.5)",
-                "hide_top_toolbar": false,
-                "hide_legend": false,
-                "save_image": false,
-                "container_id": "tradingview_chart"
-            });
-        }
-
-        /* 3. Chat Logic */
-        function handleChatEnter(e) { if (e.key === 'Enter') sendMessage(); }
-
-        async function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
-
-            const history = document.getElementById('chat-history');
-            const spin = document.getElementById('spin-chat-btn');
-
-            // Append User message
-            const userMsg = document.createElement('div');
-            userMsg.className = 'chat-message chat-user';
-            userMsg.innerText = text;
-            history.appendChild(userMsg);
-
-            input.value = "";
-            spin.style.display = "block";
-            history.scrollTop = history.scrollHeight;
-
-            try {
-                const res = await fetch(`${API_URL()}/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticker: currentTicker(), message: text })
-                });
-                const data = await res.json();
-
-                const aiMsg = document.createElement('div');
-                aiMsg.className = 'chat-message chat-ai';
-                aiMsg.innerHTML = marked.parse(data.reply || "No response");
-                history.appendChild(aiMsg);
-            } catch (err) {
-                const errMsg = document.createElement('div');
-                errMsg.className = 'chat-message chat-ai';
-                errMsg.style.color = "var(--danger-color)";
-                errMsg.innerText = "Connection failed: " + err.message;
-                history.appendChild(errMsg);
-            } finally {
-                spin.style.display = "none";
-                history.scrollTop = history.scrollHeight;
-            }
-        }
-
-        /* 4. Studio (Backtest) Logic */
-        async function runBacktest() {
-            const ticker = currentTicker();
-            const code = editor.getValue();
-            const btn = document.getElementById('btn-run-studio');
-            const spin = document.getElementById('spin-studio');
-
-            document.getElementById('studio-logs').innerText = "Running script remotely...";
-            btn.disabled = true; spin.style.display = "block";
-
-            try {
-                const res = await fetch(`${API_URL()}/backtest`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticker: ticker, code: code })
-                });
-                const data = await res.json();
-
-                document.getElementById('studio-logs').innerText = data.logs || "No output";
-                document.getElementById('bs-cagr').innerText = data.metrics?.cagr || "-";
-                document.getElementById('bs-mdd').innerText = data.metrics?.mdd || "-";
-                document.getElementById('bs-win').innerText = data.metrics?.win_rate || "-";
-
-            } catch (err) {
-                document.getElementById('studio-logs').innerText = "Execution failed: " + err.message;
-            } finally {
-                btn.disabled = false; spin.style.display = "none";
-            }
-        }
-    </script>
 </body>
-
 </html>

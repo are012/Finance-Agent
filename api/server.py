@@ -11,6 +11,7 @@ from quant.models import (
     BacktestRequest,
     BacktestResponse,
     ChartContext,
+    ChartHistoryResponse,
     FrameworkInfo,
     OrderExecutionResult,
     OrderIntent,
@@ -52,6 +53,32 @@ async def get_quant_strategies():
 async def get_chart_context(ticker: str, market: str = "usa_equity"):
     try:
         return quant_framework.resolve_chart_context(ticker=ticker, market=market)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/quant/chart-history", response_model=ChartHistoryResponse)
+async def get_chart_history(
+    ticker: str,
+    market: str = "usa_equity",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_points: int = 220,
+):
+    try:
+        from datetime import date, timedelta
+
+        resolved_end = date.fromisoformat(end_date) if end_date else date.today()
+        resolved_start = date.fromisoformat(start_date) if start_date else resolved_end - timedelta(days=365)
+        return quant_framework.get_chart_history(
+            ticker=ticker,
+            market=market,
+            start_date=resolved_start,
+            end_date=resolved_end,
+            max_points=max_points,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

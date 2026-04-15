@@ -568,6 +568,116 @@
             height: var(--chart-height);
         }
 
+        .local-chart-shell {
+            width: 100%;
+            height: var(--chart-height);
+            display: flex;
+            flex-direction: column;
+            padding: 18px 18px 14px;
+            box-sizing: border-box;
+            gap: 8px;
+        }
+
+        .local-chart-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
+
+        .local-chart-meta strong {
+            color: var(--text-strong);
+            font-size: 0.98rem;
+        }
+
+        .local-chart-readout {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .local-chart-pill {
+            display: grid;
+            gap: 4px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(246, 249, 252, 0.92);
+            border: 1px solid var(--line);
+        }
+
+        .local-chart-pill span {
+            color: var(--muted);
+            font-size: 0.76rem;
+            line-height: 1.2;
+        }
+
+        .local-chart-pill strong {
+            color: var(--text-strong);
+            font-size: 0.86rem;
+            line-height: 1.25;
+            letter-spacing: -0.01em;
+        }
+
+        .local-chart-toolbar {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .local-chart-status {
+            color: var(--muted);
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .local-chart-buttons {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .local-chart-button {
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text-strong);
+            border-radius: 12px;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+        }
+
+        .local-chart-button:hover {
+            background: var(--surface-soft);
+            border-color: rgba(49, 130, 246, 0.24);
+            transform: translateY(-1px);
+        }
+
+        .local-chart-button:active {
+            transform: translateY(0);
+        }
+
+        .local-chart-svg {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+            touch-action: pan-y;
+        }
+
+        .local-chart-svg.is-pannable:active {
+            cursor: grabbing;
+        }
+
+        .local-chart-focus-line {
+            pointer-events: none;
+        }
+
         .chart-overlay {
             position: absolute;
             inset: 0;
@@ -931,6 +1041,7 @@
             .hero-side,
             .toolbar-grid,
             .field-grid,
+            .local-chart-readout,
             .parameter-grid,
             .metric-grid {
                 grid-template-columns: 1fr;
@@ -1102,7 +1213,7 @@
                         <div class="chart-head">
                             <div>
                                 <strong>실시간 차트 보기</strong>
-                                <span>TradingView 기준 심볼과 백테스트용 티커를 함께 확인합니다.</span>
+                                <span>미국 종목은 TradingView, 한국 종목은 내부 차트로 보여주며 백테스트 티커를 함께 확인합니다.</span>
                             </div>
                             <span class="caption">관심 종목에서 바로 전환 가능</span>
                         </div>
@@ -1321,6 +1432,9 @@
             strategies: [],
             selectedStrategy: null,
             chartContext: null,
+            chartHistory: null,
+            localChartViewport: null,
+            localChartFocus: null,
             lastBacktest: null,
             runs: [],
             tradingViewWidget: null,
@@ -1424,6 +1538,98 @@
                 return;
             }
             target.innerHTML = notes.map((note) => `<div class="note">${note}</div>`).join("");
+        }
+
+        function mergeNotes(...noteGroups) {
+            return [...new Set(noteGroups.flat().filter(Boolean))];
+        }
+
+        function localChartKey(history) {
+            return [
+                history?.market,
+                history?.data_ticker,
+                history?.start_date,
+                history?.end_date,
+                history?.points?.length || 0,
+            ].join(":");
+        }
+
+        function clampLocalChartViewport(history, viewport) {
+            const total = history?.points?.length || 0;
+            if (!total) {
+                return { key: localChartKey(history), start: 0, count: 0 };
+            }
+
+            const minCount = Math.min(total, 24);
+            const count = Math.max(minCount, Math.min(Math.round(viewport?.count || total), total));
+            const maxStart = Math.max(total - count, 0);
+            const start = Math.max(0, Math.min(Math.round(viewport?.start || 0), maxStart));
+
+            return {
+                key: localChartKey(history),
+                start,
+                count,
+            };
+        }
+
+        function resetLocalChartViewport(history) {
+            const total = history?.points?.length || 0;
+            if (!total) {
+                state.localChartViewport = null;
+                return null;
+            }
+
+            const defaultCount = Math.min(total, total > 140 ? 100 : total);
+            const defaultStart = Math.max(total - defaultCount, 0);
+            state.localChartViewport = clampLocalChartViewport(history, {
+                start: defaultStart,
+                count: defaultCount,
+            });
+            return state.localChartViewport;
+        }
+
+        function ensureLocalChartViewport(history) {
+            const key = localChartKey(history);
+            if (!state.localChartViewport || state.localChartViewport.key !== key) {
+                return resetLocalChartViewport(history);
+            }
+
+            state.localChartViewport = clampLocalChartViewport(history, state.localChartViewport);
+            return state.localChartViewport;
+        }
+
+        function visibleLocalChartPoints(history) {
+            const viewport = ensureLocalChartViewport(history);
+            return history.points.slice(viewport.start, viewport.start + viewport.count);
+        }
+
+        function clampLocalChartFocusIndex(history, focusIndex, viewport = ensureLocalChartViewport(history)) {
+            const total = history?.points?.length || 0;
+            if (!total || !viewport) {
+                return 0;
+            }
+
+            const visibleStart = viewport.start;
+            const visibleEnd = viewport.start + viewport.count - 1;
+            return Math.max(visibleStart, Math.min(Math.round(focusIndex ?? visibleEnd), visibleEnd));
+        }
+
+        function ensureLocalChartFocus(history, viewport = ensureLocalChartViewport(history)) {
+            const key = localChartKey(history);
+            const fallbackIndex = viewport.start + viewport.count - 1;
+
+            if (!state.localChartFocus || state.localChartFocus.key !== key) {
+                state.localChartFocus = {
+                    key,
+                    index: fallbackIndex,
+                };
+            }
+
+            state.localChartFocus = {
+                key,
+                index: clampLocalChartFocusIndex(history, state.localChartFocus.index, viewport),
+            };
+            return state.localChartFocus;
         }
 
         function translateStrategyName(strategy) {
@@ -1556,9 +1762,28 @@
             renderNotes(elements.chartNotes, [
                 `입력 티커: ${state.chartContext.ticker}`,
                 `백테스트 데이터 티커: ${state.chartContext.data_ticker}`,
-                `TradingView 심볼: ${state.chartContext.tradingview_symbol}`,
+                `TradingView 참고 심볼: ${state.chartContext.tradingview_symbol}`,
                 ...state.chartContext.notes,
             ]);
+        }
+
+        async function fetchChartHistory() {
+            const ticker = elements.tickerInput.value.trim();
+            if (!ticker) {
+                throw new Error("티커를 입력해주세요.");
+            }
+
+            const startDate = elements.startDate.value || defaultDate(365);
+            const endDate = elements.endDate.value || defaultDate(0);
+            const query = new URLSearchParams({
+                ticker,
+                market: elements.marketSelect.value,
+                start_date: startDate,
+                end_date: endDate,
+                max_points: "220",
+            });
+            state.chartHistory = await fetchJson(`/api/quant/chart-history?${query.toString()}`);
+            return state.chartHistory;
         }
 
         function setChartOverlay(message, hidden = false) {
@@ -1609,8 +1834,27 @@
                 elements.loadChartButton.disabled = true;
                 syncWatchlistSelection();
                 await refreshChartContext();
-                const tradingView = await ensureTradingView();
                 document.getElementById("chart-widget").innerHTML = "";
+
+                if (elements.marketSelect.value === "kr_equity") {
+                    const history = await fetchChartHistory();
+                    resetLocalChartViewport(history);
+                    renderLocalPriceChart(history);
+                    renderNotes(elements.chartNotes, mergeNotes(
+                        [
+                            `입력 티커: ${state.chartContext.ticker}`,
+                            `백테스트 데이터 티커: ${history.data_ticker}`,
+                            `TradingView 참고 심볼: ${history.tradingview_symbol}`,
+                            "한국 종목은 TradingView 임베드 제한으로 내부 차트로 표시합니다.",
+                        ],
+                        state.chartContext.notes,
+                        history.notes,
+                    ));
+                    setChartOverlay("한국 종목 차트를 불러왔습니다.", true);
+                    return;
+                }
+
+                const tradingView = await ensureTradingView();
 
                 state.tradingViewWidget = new tradingView.widget({
                     autosize: true,
@@ -1659,6 +1903,374 @@
                 const y = padding + usableHeight - ((value - min) / range) * usableHeight;
                 return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
             }).join(" ");
+        }
+
+        function formatCompactNumber(value) {
+            const number = Number(value);
+            if (!Number.isFinite(number)) {
+                return "-";
+            }
+            if (number >= 1_000_000_000_000) {
+                return `${(number / 1_000_000_000_000).toFixed(1)}T`;
+            }
+            if (number >= 1_000_000_000) {
+                return `${(number / 1_000_000_000).toFixed(1)}B`;
+            }
+            if (number >= 1_000_000) {
+                return `${(number / 1_000_000).toFixed(1)}M`;
+            }
+            if (number >= 1_000) {
+                return `${(number / 1_000).toFixed(1)}K`;
+            }
+            return Math.round(number).toLocaleString("ko-KR");
+        }
+
+        function formatExactPrice(value, market) {
+            const number = Number(value);
+            if (!Number.isFinite(number)) {
+                return "-";
+            }
+            if (market === "kr_equity") {
+                return `₩${Math.round(number).toLocaleString("ko-KR")}`;
+            }
+            return `$${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function formatExactVolume(value) {
+            const number = Number(value);
+            if (!Number.isFinite(number)) {
+                return "-";
+            }
+            return Math.round(number).toLocaleString("ko-KR");
+        }
+
+        function panLocalChart(history, deltaBars) {
+            if (!history?.points?.length || !deltaBars) {
+                return;
+            }
+
+            const viewport = ensureLocalChartViewport(history);
+            state.localChartViewport = clampLocalChartViewport(history, {
+                ...viewport,
+                start: viewport.start + deltaBars,
+            });
+            renderLocalPriceChart(history);
+        }
+
+        function zoomLocalChart(history, direction, anchorRatio = 0.5) {
+            if (!history?.points?.length) {
+                return;
+            }
+
+            const viewport = ensureLocalChartViewport(history);
+            const total = history.points.length;
+            if (total <= 24) {
+                return;
+            }
+
+            const ratio = Math.max(0, Math.min(anchorRatio, 1));
+            const zoomFactor = direction === "in" ? 0.82 : 1.22;
+            const nextCount = Math.max(24, Math.min(total, Math.round(viewport.count * zoomFactor)));
+            if (nextCount === viewport.count) {
+                return;
+            }
+
+            const anchorIndex = viewport.start + Math.round((viewport.count - 1) * ratio);
+            const nextStart = anchorIndex - Math.round((nextCount - 1) * ratio);
+            state.localChartViewport = clampLocalChartViewport(history, {
+                ...viewport,
+                start: nextStart,
+                count: nextCount,
+            });
+            renderLocalPriceChart(history);
+        }
+
+        function updateLocalChartFocusDisplay(chartWidget, history, layout, absoluteIndex) {
+            if (!chartWidget || !history?.points?.length || !layout?.points?.length) {
+                return;
+            }
+
+            const clampedIndex = clampLocalChartFocusIndex(history, absoluteIndex, layout.viewport);
+            state.localChartFocus = {
+                key: localChartKey(history),
+                index: clampedIndex,
+            };
+
+            const localIndex = clampedIndex - layout.viewport.start;
+            const point = layout.points[localIndex];
+            if (!point) {
+                return;
+            }
+
+            const centerX = layout.paddingX + layout.stepX * localIndex;
+            const openY = layout.scalePrice(point.open);
+            const closeY = layout.scalePrice(point.close);
+            const highY = layout.scalePrice(point.high);
+            const lowY = layout.scalePrice(point.low);
+            const bodyTop = Math.min(openY, closeY);
+            const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
+            const isUp = point.close >= point.open;
+            const strokeColor = isUp ? "rgba(49, 130, 246, 1)" : "rgba(240, 68, 82, 0.98)";
+            const fillColor = isUp ? "rgba(49, 130, 246, 0.14)" : "rgba(240, 68, 82, 0.12)";
+            const changeRatio = point.open === 0 ? 0 : (point.close / point.open) - 1;
+
+            const line = chartWidget.querySelector("[data-chart-focus-line]");
+            const wick = chartWidget.querySelector("[data-chart-focus-wick]");
+            const body = chartWidget.querySelector("[data-chart-focus-body]");
+            if (line) {
+                line.setAttribute("x1", centerX.toFixed(2));
+                line.setAttribute("x2", centerX.toFixed(2));
+            }
+            if (wick) {
+                wick.setAttribute("x1", centerX.toFixed(2));
+                wick.setAttribute("x2", centerX.toFixed(2));
+                wick.setAttribute("y1", highY.toFixed(2));
+                wick.setAttribute("y2", lowY.toFixed(2));
+                wick.setAttribute("stroke", strokeColor);
+            }
+            if (body) {
+                body.setAttribute("x", (centerX - layout.candleWidth / 2).toFixed(2));
+                body.setAttribute("y", bodyTop.toFixed(2));
+                body.setAttribute("width", layout.candleWidth.toFixed(2));
+                body.setAttribute("height", bodyHeight.toFixed(2));
+                body.setAttribute("stroke", strokeColor);
+                body.setAttribute("fill", fillColor);
+            }
+
+            const readouts = {
+                date: point.date,
+                open: formatExactPrice(point.open, history.market),
+                high: formatExactPrice(point.high, history.market),
+                low: formatExactPrice(point.low, history.market),
+                close: formatExactPrice(point.close, history.market),
+                volume: formatExactVolume(point.volume),
+                change: formatPercent(changeRatio),
+            };
+
+            Object.entries(readouts).forEach(([key, value]) => {
+                const target = chartWidget.querySelector(`[data-local-readout="${key}"]`);
+                if (target) {
+                    target.textContent = value;
+                }
+            });
+        }
+
+        function bindLocalChartInteractions(history, layout) {
+            const chartWidget = document.getElementById("chart-widget");
+            if (!chartWidget || !history?.points?.length) {
+                return;
+            }
+
+            chartWidget.querySelectorAll("[data-chart-action]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const action = button.dataset.chartAction;
+                    const viewport = ensureLocalChartViewport(history);
+                    const panStep = Math.max(6, Math.round(viewport.count * 0.18));
+
+                    if (action === "zoom-in") {
+                        zoomLocalChart(history, "in", 0.5);
+                    } else if (action === "zoom-out") {
+                        zoomLocalChart(history, "out", 0.5);
+                    } else if (action === "pan-left") {
+                        panLocalChart(history, -panStep);
+                    } else if (action === "pan-right") {
+                        panLocalChart(history, panStep);
+                    } else if (action === "reset") {
+                        resetLocalChartViewport(history);
+                        renderLocalPriceChart(history);
+                    }
+                });
+            });
+
+            const surface = chartWidget.querySelector("[data-local-chart-surface]");
+            if (!surface) {
+                return;
+            }
+
+            surface.addEventListener("wheel", (event) => {
+                event.preventDefault();
+
+                const rect = surface.getBoundingClientRect();
+                const anchorRatio = rect.width ? (event.clientX - rect.left) / rect.width : 0.5;
+                const isHorizontalPan = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) * 0.75;
+
+                if (isHorizontalPan) {
+                    const rawShift = event.deltaX || event.deltaY;
+                    if (!rawShift) {
+                        return;
+                    }
+                    const viewport = ensureLocalChartViewport(history);
+                    const step = Math.max(1, Math.round(Math.abs(rawShift) / 24));
+                    panLocalChart(history, rawShift > 0 ? step : -step);
+                    return;
+                }
+
+                zoomLocalChart(history, event.deltaY < 0 ? "in" : "out", anchorRatio);
+            }, { passive: false });
+
+            surface.addEventListener("dblclick", () => {
+                resetLocalChartViewport(history);
+                renderLocalPriceChart(history);
+            });
+
+            surface.addEventListener("mousemove", (event) => {
+                if (!layout?.points?.length) {
+                    return;
+                }
+
+                const rect = surface.getBoundingClientRect();
+                if (!rect.width) {
+                    return;
+                }
+
+                const normalizedX = ((event.clientX - rect.left) / rect.width) * layout.width;
+                const plotX = Math.max(layout.paddingX, Math.min(normalizedX, layout.lastX));
+                const localIndex = Math.max(0, Math.min(Math.round((plotX - layout.paddingX) / Math.max(layout.stepX, 1)), layout.points.length - 1));
+                updateLocalChartFocusDisplay(chartWidget, history, layout, layout.viewport.start + localIndex);
+            });
+
+            surface.addEventListener("mouseleave", () => {
+                updateLocalChartFocusDisplay(chartWidget, history, layout, state.localChartFocus?.index ?? (layout.viewport.start + layout.points.length - 1));
+            });
+        }
+
+        function renderLocalPriceChart(history) {
+            if (!history?.points?.length) {
+                document.getElementById("chart-widget").innerHTML = '<div class="chart-empty">차트 데이터가 없습니다.</div>';
+                return;
+            }
+
+            const totalPoints = history.points.length;
+            const viewport = ensureLocalChartViewport(history);
+            const points = visibleLocalChartPoints(history);
+            const width = 760;
+            const height = 320;
+            const paddingX = 24;
+            const priceTop = 18;
+            const priceBottom = 190;
+            const volumeTop = 226;
+            const volumeBottom = 286;
+            const closes = points.map((point) => point.close);
+            const highs = points.map((point) => point.high);
+            const lows = points.map((point) => point.low);
+            const volumes = points.map((point) => point.volume);
+            const minPrice = Math.min(...lows);
+            const maxPrice = Math.max(...highs);
+            const priceRange = maxPrice - minPrice || 1;
+            const volumeMax = Math.max(...volumes, 1);
+            const usableWidth = width - paddingX * 2;
+            const stepX = usableWidth / Math.max(points.length - 1, 1);
+            const firstX = paddingX;
+            const lastX = paddingX + usableWidth;
+            const candleWidth = Math.max(Math.min(stepX * 0.62, 9), 2.4);
+            const focusState = ensureLocalChartFocus(history, viewport);
+            const focusAbsoluteIndex = clampLocalChartFocusIndex(history, focusState.index, viewport);
+            const focusLocalIndex = focusAbsoluteIndex - viewport.start;
+
+            const scalePrice = (value) => priceBottom - ((value - minPrice) / priceRange) * (priceBottom - priceTop);
+            const firstClose = closes[0];
+            const lastClose = closes[closes.length - 1];
+            const changeRatio = firstClose === 0 ? 0 : (lastClose / firstClose) - 1;
+            const midIndex = Math.floor(points.length / 2);
+            const focusPoint = points[focusLocalIndex] || points[points.length - 1];
+            const focusX = paddingX + stepX * focusLocalIndex;
+            const focusOpenY = scalePrice(focusPoint.open);
+            const focusCloseY = scalePrice(focusPoint.close);
+            const focusHighY = scalePrice(focusPoint.high);
+            const focusLowY = scalePrice(focusPoint.low);
+            const focusBodyTop = Math.min(focusOpenY, focusCloseY);
+            const focusBodyHeight = Math.max(Math.abs(focusCloseY - focusOpenY), 2);
+            const focusIsUp = focusPoint.close >= focusPoint.open;
+            const focusStroke = focusIsUp ? "rgba(49, 130, 246, 1)" : "rgba(240, 68, 82, 0.98)";
+            const focusFill = focusIsUp ? "rgba(49, 130, 246, 0.14)" : "rgba(240, 68, 82, 0.12)";
+            const focusChangeRatio = focusPoint.open === 0 ? 0 : (focusPoint.close / focusPoint.open) - 1;
+            const candleMarkup = points.map((point, index) => {
+                const centerX = paddingX + stepX * index;
+                const openY = scalePrice(point.open);
+                const closeY = scalePrice(point.close);
+                const highY = scalePrice(point.high);
+                const lowY = scalePrice(point.low);
+                const bodyTop = Math.min(openY, closeY);
+                const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
+                const isUp = point.close >= point.open;
+                const bodyColor = isUp ? "rgba(49, 130, 246, 0.88)" : "rgba(240, 68, 82, 0.82)";
+                const wickColor = isUp ? "rgba(49, 130, 246, 1)" : "rgba(240, 68, 82, 0.96)";
+                const bodyX = centerX - candleWidth / 2;
+                return `
+                    <line x1="${centerX.toFixed(2)}" y1="${highY.toFixed(2)}" x2="${centerX.toFixed(2)}" y2="${lowY.toFixed(2)}" stroke="${wickColor}" stroke-width="1.4" stroke-linecap="round"></line>
+                    <rect x="${bodyX.toFixed(2)}" y="${bodyTop.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${bodyHeight.toFixed(2)}" rx="1.6" fill="${bodyColor}" stroke="${wickColor}" stroke-width="1"></rect>
+                `;
+            }).join("");
+            const volumeMarkup = points.map((point, index) => {
+                const centerX = paddingX + stepX * index;
+                const barHeight = (point.volume / volumeMax) * (volumeBottom - volumeTop);
+                const y = volumeBottom - barHeight;
+                const isUp = point.close >= point.open;
+                const volumeColor = isUp ? "rgba(49, 130, 246, 0.24)" : "rgba(240, 68, 82, 0.20)";
+                return `<rect x="${(centerX - candleWidth / 2).toFixed(2)}" y="${y.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="1.5" fill="${volumeColor}"></rect>`;
+            }).join("");
+            const isPannable = totalPoints > points.length;
+
+            document.getElementById("chart-widget").innerHTML = `
+                <div class="local-chart-shell">
+                    <div class="local-chart-meta">
+                        <div>
+                            <strong>${history.ticker}</strong>
+                            <span style="margin-left: 8px;">${formatMoney(lastClose, history.market)} / ${formatPercent(changeRatio)}</span>
+                        </div>
+                        <div class="local-chart-toolbar">
+                            <span class="local-chart-status">보이는 봉 ${points.length} / 전체 ${totalPoints} · 휠 확대/축소 · Shift+휠 또는 버튼 이동 · 더블클릭 초기화</span>
+                            <div class="local-chart-buttons">
+                                <button class="local-chart-button" type="button" data-chart-action="pan-left">이전</button>
+                                <button class="local-chart-button" type="button" data-chart-action="zoom-out">축소</button>
+                                <button class="local-chart-button" type="button" data-chart-action="zoom-in">확대</button>
+                                <button class="local-chart-button" type="button" data-chart-action="pan-right">다음</button>
+                                <button class="local-chart-button" type="button" data-chart-action="reset">전체</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="local-chart-readout">
+                        <div class="local-chart-pill"><span>날짜</span><strong data-local-readout="date">${focusPoint.date}</strong></div>
+                        <div class="local-chart-pill"><span>시가</span><strong data-local-readout="open">${formatExactPrice(focusPoint.open, history.market)}</strong></div>
+                        <div class="local-chart-pill"><span>고가</span><strong data-local-readout="high">${formatExactPrice(focusPoint.high, history.market)}</strong></div>
+                        <div class="local-chart-pill"><span>저가</span><strong data-local-readout="low">${formatExactPrice(focusPoint.low, history.market)}</strong></div>
+                        <div class="local-chart-pill"><span>종가</span><strong data-local-readout="close">${formatExactPrice(focusPoint.close, history.market)}</strong></div>
+                        <div class="local-chart-pill"><span>거래량</span><strong data-local-readout="volume">${formatExactVolume(focusPoint.volume)}</strong></div>
+                        <div class="local-chart-pill"><span>등락률</span><strong data-local-readout="change">${formatPercent(focusChangeRatio)}</strong></div>
+                    </div>
+                    <svg class="local-chart-svg ${isPannable ? "is-pannable" : ""}" data-local-chart-surface="true" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Local price chart">
+                        ${[maxPrice, (maxPrice + minPrice) / 2, minPrice].map((label, index) => {
+                            const y = priceTop + (index / 2) * (priceBottom - priceTop);
+                            return `
+                                <line x1="${paddingX}" y1="${y}" x2="${width - paddingX}" y2="${y}" stroke="rgba(139, 149, 161, 0.18)" stroke-dasharray="5 8" />
+                                <text x="${paddingX}" y="${y - 6}" fill="rgba(139, 149, 161, 0.92)" font-size="11">${formatMoney(label, history.market)}</text>
+                            `;
+                        }).join("")}
+                        ${candleMarkup}
+                        <line class="local-chart-focus-line" data-chart-focus-line="true" x1="${focusX.toFixed(2)}" y1="${priceTop}" x2="${focusX.toFixed(2)}" y2="${volumeBottom}" stroke="rgba(139, 149, 161, 0.42)" stroke-width="1.2" stroke-dasharray="5 6"></line>
+                        <line class="local-chart-focus-line" data-chart-focus-wick="true" x1="${focusX.toFixed(2)}" y1="${focusHighY.toFixed(2)}" x2="${focusX.toFixed(2)}" y2="${focusLowY.toFixed(2)}" stroke="${focusStroke}" stroke-width="2.2" stroke-linecap="round"></line>
+                        <rect class="local-chart-focus-line" data-chart-focus-body="true" x="${(focusX - candleWidth / 2).toFixed(2)}" y="${focusBodyTop.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${focusBodyHeight.toFixed(2)}" rx="1.8" fill="${focusFill}" stroke="${focusStroke}" stroke-width="2"></rect>
+                        ${volumeMarkup}
+                        <line x1="${paddingX}" y1="${volumeTop}" x2="${width - paddingX}" y2="${volumeTop}" stroke="rgba(139, 149, 161, 0.12)"></line>
+                        <text x="${paddingX}" y="${volumeTop - 8}" fill="rgba(139, 149, 161, 0.88)" font-size="11">거래량</text>
+                        <text x="${width - paddingX}" y="${volumeTop - 8}" text-anchor="end" fill="rgba(139, 149, 161, 0.88)" font-size="11">최근 거래량 ${formatCompactNumber(volumes[volumes.length - 1])}</text>
+                        <text x="${firstX}" y="${height - 10}" fill="rgba(139, 149, 161, 0.92)" font-size="11">${points[0].date}</text>
+                        <text x="${paddingX + stepX * midIndex}" y="${height - 10}" text-anchor="middle" fill="rgba(139, 149, 161, 0.92)" font-size="11">${points[midIndex].date}</text>
+                        <text x="${lastX}" y="${height - 10}" text-anchor="end" fill="rgba(139, 149, 161, 0.92)" font-size="11">${points[points.length - 1].date}</text>
+                    </svg>
+                </div>
+            `;
+
+            bindLocalChartInteractions(history, {
+                width,
+                paddingX,
+                lastX,
+                stepX,
+                candleWidth,
+                scalePrice,
+                viewport,
+                points,
+            });
         }
 
         function renderEquityChart(points, strategyName, ticker, market) {

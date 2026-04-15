@@ -197,6 +197,26 @@ class ChartContext(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ChartHistoryPoint(BaseModel):
+    date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class ChartHistoryResponse(BaseModel):
+    ticker: str
+    market: str
+    data_ticker: str
+    tradingview_symbol: str
+    start_date: date
+    end_date: date
+    points: list[ChartHistoryPoint]
+    notes: list[str] = Field(default_factory=list)
+
+
 class BacktestRequest(StrategyRequest):
     max_points: int = 220
 

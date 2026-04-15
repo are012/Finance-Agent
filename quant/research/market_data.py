@@ -18,12 +18,14 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
 class MarketDataService:
     def __init__(self, cache_dir: Path | None = None) -> None:
         self.cache_dir = cache_dir
+        self._krx_listing: pd.DataFrame | None = None
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def resolve_chart_context(self, ticker: str, market: str) -> ChartContext:
-        raw_ticker = ticker.strip().upper()
-        if not raw_ticker:
+        original_ticker = ticker.strip()
+        raw_ticker = original_ticker.upper()
+        if not original_ticker:
             raise ValueError("ticker must not be empty")
 
         notes: list[str] = []
@@ -42,7 +44,13 @@ class MarketDataService:
                 data_ticker = f"{normalized}.KS"
                 notes.append("KR 시장은 접미사가 없으면 기본적으로 코스피(.KS)로 해석합니다. 코스닥 종목은 086520.KQ처럼 .KQ를 붙여주세요.")
             else:
-                code = normalized
+                resolved = self._resolve_kr_company_name(original_ticker)
+                if resolved is not None:
+                    code, suffix, market_name, company_name = resolved
+                    data_ticker = f"{code}.{suffix}"
+                    notes.append(f"{company_name} 종목명을 {market_name} 티커 {data_ticker}로 변환했습니다.")
+                else:
+                    code = normalized
             tradingview_symbol = f"KRX:{code}"
         elif market == "usa_equity":
             tradingview_symbol = raw_ticker
@@ -248,3 +256,39 @@ class MarketDataService:
         cached = frame.copy()
         cached.index.name = "date"
         cached.to_csv(cache_path)
+
+    def _resolve_kr_company_name(self, identifier: str) -> tuple[str, str, str, str] | None:
+        listing = self._load_krx_listing()
+        if listing.empty:
+            return None
+
+        normalized = identifier.strip().casefold()
+        matched = listing[listing["name_normalized"] == normalized]
+        if matched.empty:
+            return None
+
+        row = matched.iloc[0]
+        market_name = str(row["Market"]).strip().upper()
+        suffix = "KQ" if "KOSDAQ" in market_name else "KS"
+        return str(row["Code"]).zfill(6), suffix, market_name, str(row["Name"]).strip()
+
+    def _load_krx_listing(self) -> pd.DataFrame:
+        if self._krx_listing is not None:
+            return self._krx_listing
+
+        if fdr is None:
+            self._krx_listing = pd.DataFrame()
+            return self._krx_listing
+
+        try:
+            listing = fdr.StockListing("KRX").copy()
+        except Exception:
+            self._krx_listing = pd.DataFrame()
+            return self._krx_listing
+
+        listing["Code"] = listing["Code"].astype(str).str.zfill(6)
+        listing["Name"] = listing["Name"].astype(str).str.strip()
+        listing["Market"] = listing["Market"].astype(str).str.strip()
+        listing["name_normalized"] = listing["Name"].str.casefold()
+        self._krx_listing = listing
+        return self._krx_listing

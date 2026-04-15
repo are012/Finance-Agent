@@ -45,6 +45,7 @@ class StrategyMetadata(BaseModel):
     lean_class_name: str
     parameters: list[StrategyParameter]
     supports_live_trading: bool = True
+    family: str = "general"
 
 
 class StrategyRequest(BaseModel):
@@ -186,3 +187,68 @@ class FrameworkInfo(BaseModel):
     strategies: list[StrategyMetadata]
     kis_env_vars: list[str]
     notes: list[str]
+
+
+class ChartContext(BaseModel):
+    ticker: str
+    market: str
+    data_ticker: str
+    tradingview_symbol: str
+    notes: list[str] = Field(default_factory=list)
+
+
+class BacktestRequest(StrategyRequest):
+    max_points: int = 220
+
+    @field_validator("max_points")
+    @classmethod
+    def validate_max_points(cls, value: int) -> int:
+        if value < 50:
+            raise ValueError("max_points must be at least 50")
+        if value > 1000:
+            raise ValueError("max_points must be 1000 or less")
+        return value
+
+
+class BacktestMetrics(BaseModel):
+    total_return: float
+    annual_return: float
+    benchmark_return: float
+    max_drawdown: float
+    sharpe_ratio: float
+    volatility: float
+    win_rate: float
+    exposure: float
+    trade_count: int
+
+
+class BacktestPoint(BaseModel):
+    date: date
+    close: float
+    strategy_equity: float
+    benchmark_equity: float
+    position: float
+
+
+class BacktestTrade(BaseModel):
+    entered_at: date
+    exited_at: date | None = None
+    entry_price: float
+    exit_price: float | None = None
+    return_pct: float | None = None
+
+
+class BacktestResponse(BaseModel):
+    strategy: StrategyMetadata
+    ticker: str
+    market: str
+    data_ticker: str
+    tradingview_symbol: str
+    start_date: date
+    end_date: date
+    initial_cash: float
+    parameters: dict[str, str]
+    metrics: BacktestMetrics
+    equity_curve: list[BacktestPoint]
+    trades: list[BacktestTrade]
+    notes: list[str] = Field(default_factory=list)

@@ -3,130 +3,1600 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lean + KIS Framework</title>
+    <title>Quant Canvas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #f5f0e8;
-            --ink: #1e2a24;
-            --accent: #0b6e4f;
-            --panel: rgba(255, 255, 255, 0.72);
-            --line: rgba(30, 42, 36, 0.14);
+            --bg: #f3eee2;
+            --ink: #173027;
+            --muted: #64756d;
+            --panel: rgba(255, 252, 246, 0.82);
+            --panel-strong: rgba(255, 252, 246, 0.92);
+            --line: rgba(23, 48, 39, 0.12);
+            --accent: #0b7a58;
+            --accent-soft: rgba(11, 122, 88, 0.14);
+            --amber: #d28b2d;
+            --rose: #b2544f;
+            --shadow: 0 20px 60px rgba(45, 38, 26, 0.1);
+            --radius-xl: 28px;
+            --radius-lg: 20px;
+            --radius-md: 14px;
+            --chart-height: 530px;
         }
 
         * {
             box-sizing: border-box;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             margin: 0;
             min-height: 100vh;
+            font-family: "Manrope", sans-serif;
             color: var(--ink);
             background:
-                radial-gradient(circle at top left, rgba(11, 110, 79, 0.16), transparent 32%),
-                radial-gradient(circle at bottom right, rgba(180, 120, 40, 0.14), transparent 28%),
-                linear-gradient(135deg, #f7f2ea, #efe3d1 54%, #eadfce);
-            font-family: "IBM Plex Sans", "Noto Sans KR", sans-serif;
+                radial-gradient(circle at 12% 12%, rgba(11, 122, 88, 0.18), transparent 26%),
+                radial-gradient(circle at 85% 18%, rgba(210, 139, 45, 0.14), transparent 20%),
+                radial-gradient(circle at 70% 80%, rgba(53, 120, 104, 0.12), transparent 24%),
+                linear-gradient(135deg, #f6f1e7 0%, #efe3cf 45%, #e7e1d4 100%);
+            overflow-x: hidden;
         }
 
-        main {
-            max-width: 980px;
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
+            background-size: 32px 32px;
+            opacity: 0.24;
+            pointer-events: none;
+            mask-image: radial-gradient(circle at center, black 30%, transparent 88%);
+        }
+
+        .shell {
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
             margin: 0 auto;
-            padding: 48px 24px 72px;
+            padding: 28px 22px 80px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 22px;
+            padding: 16px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 48, 39, 0.1);
+            background: rgba(255, 252, 246, 0.58);
+            backdrop-filter: blur(18px);
+            box-shadow: 0 10px 35px rgba(31, 29, 24, 0.05);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-mark {
+            width: 46px;
+            height: 46px;
+            border-radius: 16px;
+            background:
+                linear-gradient(135deg, rgba(11, 122, 88, 0.96), rgba(9, 94, 69, 0.76)),
+                linear-gradient(135deg, rgba(210, 139, 45, 0.25), transparent);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 12px 20px rgba(11, 122, 88, 0.18);
+            display: grid;
+            place-items: center;
+            color: white;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+        }
+
+        .brand-copy h1 {
+            margin: 0;
+            font-family: "Fraunces", serif;
+            font-size: clamp(1.5rem, 3vw, 2rem);
+            line-height: 1;
+            letter-spacing: -0.03em;
+        }
+
+        .brand-copy p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .topbar-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            color: var(--ink);
+            font-size: 0.92rem;
+            transition: transform 180ms ease, box-shadow 180ms ease;
+        }
+
+        .pill:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(24, 26, 24, 0.06);
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 0 8px rgba(11, 122, 88, 0.11);
         }
 
         .hero {
-            background: var(--panel);
-            border: 1px solid var(--line);
-            border-radius: 24px;
-            padding: 32px;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 18px 50px rgba(45, 38, 26, 0.08);
-        }
-
-        h1 {
-            font-family: "IBM Plex Serif", "Noto Serif KR", serif;
-            font-size: clamp(2.2rem, 6vw, 4rem);
-            line-height: 1.05;
-            margin: 0 0 12px;
-            letter-spacing: -0.04em;
-        }
-
-        p.lead {
-            font-size: 1.1rem;
-            max-width: 720px;
-            margin: 0;
-        }
-
-        .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-top: 28px;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 18px;
+            margin-bottom: 18px;
         }
 
-        .card {
-            background: rgba(255, 255, 255, 0.78);
+        .panel {
+            border-radius: var(--radius-xl);
             border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px);
+            overflow: hidden;
+            transform: translateY(16px);
+            opacity: 0;
+            animation: rise 680ms ease forwards;
+        }
+
+        .panel:nth-child(2) {
+            animation-delay: 70ms;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-copy {
+            padding: 34px 32px 32px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(11, 122, 88, 0.09);
+            color: var(--accent);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            margin-bottom: 18px;
+        }
+
+        .hero-copy h2 {
+            margin: 0;
+            max-width: 12ch;
+            font-family: "Fraunces", serif;
+            font-size: clamp(2.5rem, 6vw, 4.9rem);
+            line-height: 0.95;
+            letter-spacing: -0.05em;
+        }
+
+        .hero-copy p {
+            margin: 18px 0 0;
+            max-width: 60ch;
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1.72;
+        }
+
+        .hero-ribbon {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 26px;
+        }
+
+        .hero-stat {
+            padding: 16px;
             border-radius: 18px;
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(23, 48, 39, 0.07);
+        }
+
+        .hero-stat label {
+            display: block;
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+        }
+
+        .hero-stat strong {
+            font-size: 1.5rem;
+            font-weight: 800;
+        }
+
+        .hero-side {
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            gap: 18px;
             padding: 18px;
         }
 
-        .card h2 {
-            font-size: 1rem;
-            margin: 0 0 10px;
+        .mini-panel {
+            border-radius: 22px;
+            padding: 22px;
+            background: var(--panel-strong);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+        }
+
+        .mini-panel h3,
+        .section-head h3 {
+            margin: 0;
+            font-size: 1.03rem;
+            letter-spacing: -0.02em;
+        }
+
+        .mini-panel p,
+        .section-head p,
+        .caption {
+            color: var(--muted);
+            line-height: 1.65;
+            font-size: 0.92rem;
+        }
+
+        .health-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .health-value {
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .workspace,
+        .results-grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .workspace {
+            grid-template-columns: 1.25fr 1fr;
+            margin-bottom: 18px;
+        }
+
+        .results-grid {
+            grid-template-columns: 1.35fr 0.95fr;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 26px 26px 18px;
+        }
+
+        .section-head p {
+            margin: 8px 0 0;
+        }
+
+        .section-pill {
+            border-radius: 999px;
+            padding: 9px 12px;
+            background: rgba(11, 122, 88, 0.09);
+            color: var(--accent);
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .explorer-body,
+        .studio-body,
+        .results-body,
+        .trade-body {
+            padding: 0 26px 26px;
+        }
+
+        .field-grid {
+            display: grid;
+            gap: 14px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .field-group,
+        .param-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .field-group label,
+        .param-group label {
+            font-size: 0.88rem;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .field-group input,
+        .field-group select,
+        .param-group input {
+            width: 100%;
+            border: 1px solid rgba(23, 48, 39, 0.12);
+            background: rgba(255, 255, 255, 0.68);
+            border-radius: 14px;
+            padding: 14px 14px;
+            color: var(--ink);
+            font: inherit;
+            transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+        }
+
+        .field-group input:focus,
+        .field-group select:focus,
+        .param-group input:focus {
+            outline: none;
+            border-color: rgba(11, 122, 88, 0.5);
+            box-shadow: 0 0 0 5px rgba(11, 122, 88, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .chip-row,
+        .action-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 48, 39, 0.1);
+            background: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+            font: inherit;
+            color: var(--ink);
+        }
+
+        .chip:hover,
+        .strategy-card:hover,
+        .action-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .chip.active {
+            background: rgba(11, 122, 88, 0.12);
+            border-color: rgba(11, 122, 88, 0.28);
             color: var(--accent);
         }
 
-        code {
+        .chart-frame {
+            position: relative;
+            margin-top: 18px;
+            border-radius: 24px;
+            overflow: hidden;
+            min-height: var(--chart-height);
+            background:
+                radial-gradient(circle at top left, rgba(11, 122, 88, 0.14), transparent 26%),
+                linear-gradient(160deg, #112820, #1d362d 45%, #1d2d2c);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        #chart-widget {
+            height: var(--chart-height);
+            width: 100%;
+        }
+
+        .chart-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.84);
+            transition: opacity 260ms ease;
+            padding: 26px;
+            background: linear-gradient(180deg, rgba(17, 40, 32, 0.12), rgba(17, 40, 32, 0.32));
+        }
+
+        .chart-overlay.hidden {
+            opacity: 0;
+        }
+
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .strategy-card {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(23, 48, 39, 0.1);
+            background: rgba(255, 255, 255, 0.65);
+            cursor: pointer;
+            transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+        }
+
+        .strategy-card.active {
+            background: linear-gradient(180deg, rgba(11, 122, 88, 0.12), rgba(255, 255, 255, 0.82));
+            border-color: rgba(11, 122, 88, 0.28);
+            box-shadow: 0 16px 30px rgba(11, 122, 88, 0.09);
+        }
+
+        .strategy-family {
+            display: inline-flex;
+            width: fit-content;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(23, 48, 39, 0.06);
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .strategy-card strong {
+            font-size: 1rem;
+            line-height: 1.2;
+        }
+
+        .strategy-card p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        .parameter-shell {
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            padding: 18px;
+            transition: opacity 220ms ease, transform 220ms ease;
+        }
+
+        .parameter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .action-row {
+            margin-top: 18px;
+        }
+
+        .action-button {
+            border: none;
+            border-radius: 16px;
+            padding: 14px 18px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+        }
+
+        .action-button.primary {
+            background: linear-gradient(135deg, #0b7a58, #0f5f47);
+            color: white;
+            box-shadow: 0 16px 28px rgba(11, 122, 88, 0.22);
+        }
+
+        .action-button.secondary {
+            background: rgba(255, 255, 255, 0.8);
+            color: var(--ink);
+            border: 1px solid rgba(23, 48, 39, 0.1);
+        }
+
+        .action-button:disabled {
+            cursor: wait;
+            opacity: 0.7;
+            transform: none;
+        }
+
+        .results-body {
+            display: grid;
+            gap: 18px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .metric-card {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            transition: transform 180ms ease, background 180ms ease;
+        }
+
+        .metric-card.accent {
+            background: linear-gradient(180deg, rgba(11, 122, 88, 0.12), rgba(255, 255, 255, 0.8));
+        }
+
+        .metric-card.warn {
+            background: linear-gradient(180deg, rgba(210, 139, 45, 0.12), rgba(255, 255, 255, 0.8));
+        }
+
+        .metric-card.danger {
+            background: linear-gradient(180deg, rgba(178, 84, 79, 0.12), rgba(255, 255, 255, 0.8));
+        }
+
+        .metric-card span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.82rem;
+            margin-bottom: 8px;
+        }
+
+        .metric-card strong {
+            font-size: 1.55rem;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+        }
+
+        .equity-shell,
+        .info-shell,
+        .runs-shell {
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            padding: 18px;
+        }
+
+        .equity-head,
+        .subhead {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .legend span::before {
+            content: "";
             display: inline-block;
-            background: rgba(17, 24, 39, 0.08);
-            border-radius: 8px;
-            padding: 4px 8px;
-            font-size: 0.95rem;
-            margin: 4px 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: -2px;
         }
 
-        ul {
-            margin: 12px 0 0;
-            padding-left: 18px;
+        .legend .strategy::before {
+            background: var(--accent);
         }
 
-        li {
-            margin: 8px 0;
+        .legend .benchmark::before {
+            background: var(--amber);
+        }
+
+        .equity-chart {
+            width: 100%;
+            min-height: 320px;
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(11, 122, 88, 0.03), rgba(11, 122, 88, 0.01)),
+                rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .equity-chart svg {
+            width: 100%;
+            height: 320px;
+            display: block;
+        }
+
+        .chart-empty {
+            display: grid;
+            place-items: center;
+            min-height: 320px;
+            text-align: center;
+            color: var(--muted);
+            padding: 18px;
+        }
+
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .trade-table th,
+        .trade-table td {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(23, 48, 39, 0.08);
+        }
+
+        .trade-table th {
+            color: var(--muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .mono {
+            font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        }
+
+        .note-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .note {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+
+        .run-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .run-item {
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.66);
+            border: 1px solid rgba(23, 48, 39, 0.08);
+        }
+
+        .run-item strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .run-item small {
+            color: var(--muted);
+        }
+
+        .fade-swap {
+            animation: swap 260ms ease;
+        }
+
+        @keyframes swap {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 1120px) {
+            .hero,
+            .workspace,
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-side {
+                grid-template-rows: none;
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 800px) {
+            .shell {
+                padding: 18px 14px 58px;
+            }
+
+            .topbar {
+                border-radius: 28px;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .topbar-meta {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .hero-copy,
+            .panel-head,
+            .explorer-body,
+            .studio-body,
+            .results-body,
+            .trade-body {
+                padding-left: 18px;
+                padding-right: 18px;
+            }
+
+            .hero-ribbon,
+            .field-grid,
+            .parameter-grid,
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-side {
+                grid-template-columns: 1fr;
+            }
+
+            :root {
+                --chart-height: 420px;
+            }
         }
     </style>
 </head>
 <body>
-    <main>
-        <section class="hero">
-            <h1>Lean + KIS Quant Framework</h1>
-            <p class="lead">
-                Lean으로 전략을 연구하고 백테스트한 뒤, 승인된 주문만 KIS 어댑터로 분리 실행하는 확장형 퀀트 프레임워크입니다.
-            </p>
-            <div class="grid">
-                <article class="card">
-                    <h2>핵심 API</h2>
-                    <div><code>GET /api/quant/framework</code></div>
-                    <div><code>POST /api/quant/lean/projects</code></div>
-                    <div><code>POST /api/quant/kis/orders/preview</code></div>
-                    <div><code>POST /api/quant/kis/orders/submit</code></div>
-                </article>
-                <article class="card">
-                    <h2>CLI 예시</h2>
-                    <div><code>python3 main.py list-strategies</code></div>
-                    <div><code>python3 main.py create-project --ticker AAPL</code></div>
-                    <div><code>python3 main.py serve-api --reload</code></div>
-                </article>
-                <article class="card">
-                    <h2>기본 전략</h2>
-                    <ul>
-                        <li><code>sma_cross</code></li>
-                        <li><code>ema_cross</code></li>
-                        <li><code>rsi_reversion</code></li>
-                    </ul>
-                </article>
+    <div class="shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">QC</div>
+                <div class="brand-copy">
+                    <h1>Quant Canvas</h1>
+                    <p>부드러운 인터랙션으로 전략을 탐색하고 차트와 백테스트를 한 화면에서 다루는 연구 워크스페이스</p>
+                </div>
             </div>
+            <div class="topbar-meta">
+                <div class="pill"><span class="status-dot"></span><span id="health-status">API 확인 중</span></div>
+                <div class="pill">전략 <strong id="strategy-count">0</strong></div>
+                <div class="pill">Lean Runs <strong id="run-count">0</strong></div>
+            </div>
+        </header>
+
+        <section class="hero">
+            <article class="panel hero-copy">
+                <div class="eyebrow">Interactive Quant Lab</div>
+                <h2>차트는 부드럽게, 전략은 빠르게 실험합니다.</h2>
+                <p>
+                    종목을 바꿔가며 TradingView 차트를 보고, 여러 퀀트 전략을 파라미터까지 조정해 즉시 백테스트한 뒤,
+                    마음에 드는 조합은 Lean 프로젝트 스캐폴드로 넘길 수 있게 구성했습니다.
+                </p>
+                <div class="hero-ribbon">
+                    <div class="hero-stat">
+                        <label>탐색 모드</label>
+                        <strong>Multi-Market</strong>
+                    </div>
+                    <div class="hero-stat">
+                        <label>백테스트 기준</label>
+                        <strong>Daily</strong>
+                    </div>
+                    <div class="hero-stat">
+                        <label>실행 흐름</label>
+                        <strong>UI → Lean → KIS</strong>
+                    </div>
+                </div>
+            </article>
+            <aside class="panel hero-side">
+                <div class="mini-panel">
+                    <h3>현재 워크스페이스</h3>
+                    <p id="framework-summary">프레임워크 정보를 불러오는 중입니다.</p>
+                    <div class="health-row">
+                        <span class="caption">기본 프로젝트 저장 위치</span>
+                        <span class="mono" id="projects-dir">-</span>
+                    </div>
+                </div>
+                <div class="mini-panel">
+                    <h3>즉시 해볼 수 있는 흐름</h3>
+                    <p>시장과 종목을 고르고, 전략 카드를 선택한 뒤, 파라미터를 조정하고 `백테스트 실행`을 눌러보세요. 결과가 괜찮으면 바로 Lean 프로젝트로 내보낼 수 있습니다.</p>
+                    <div class="health-row">
+                        <span class="caption">권장 시작 종목</span>
+                        <span class="mono">NVDA / AAPL / 005930</span>
+                    </div>
+                </div>
+            </aside>
         </section>
-    </main>
+
+        <section class="workspace">
+            <article class="panel">
+                <div class="panel-head">
+                    <div class="section-head">
+                        <h3>Market Observatory</h3>
+                        <p>미국 주식과 한국 주식을 빠르게 넘겨보며 차트를 확인하고 전략 테스트 대상으로 고를 수 있습니다.</p>
+                    </div>
+                    <div class="section-pill">Smooth Chart Flow</div>
+                </div>
+                <div class="explorer-body">
+                    <div class="field-grid">
+                        <div class="field-group">
+                            <label for="market-select">시장</label>
+                            <select id="market-select">
+                                <option value="usa_equity">미국 주식</option>
+                                <option value="kr_equity">한국 주식</option>
+                            </select>
+                        </div>
+                        <div class="field-group">
+                            <label for="ticker-input">티커</label>
+                            <input id="ticker-input" type="text" value="NVDA" placeholder="예: NVDA 또는 005930">
+                        </div>
+                        <div class="field-group">
+                            <label>&nbsp;</label>
+                            <button class="action-button secondary" id="load-chart-button" type="button">차트 새로 열기</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 16px;">
+                        <div class="caption" style="margin-bottom: 10px;">빠른 전환</div>
+                        <div class="chip-row" id="watchlist-row">
+                            <button class="chip active" data-market="usa_equity" data-ticker="NVDA">NVDA</button>
+                            <button class="chip" data-market="usa_equity" data-ticker="AAPL">AAPL</button>
+                            <button class="chip" data-market="usa_equity" data-ticker="MSFT">MSFT</button>
+                            <button class="chip" data-market="usa_equity" data-ticker="TSLA">TSLA</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="005930">005930</button>
+                            <button class="chip" data-market="kr_equity" data-ticker="000660">000660</button>
+                        </div>
+                    </div>
+
+                    <div class="chart-frame">
+                        <div id="chart-widget"></div>
+                        <div class="chart-overlay" id="chart-overlay">
+                            <div>
+                                <strong style="display:block; font-size:1.1rem; margin-bottom: 8px;">차트 준비 중</strong>
+                                <span id="chart-overlay-text">TradingView 위젯을 불러오고 있습니다.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="note-list" id="chart-notes" style="margin-top: 16px;"></div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-head">
+                    <div class="section-head">
+                        <h3>Strategy Studio</h3>
+                        <p>전략 카드를 고르면 파라미터 폼이 자동으로 바뀝니다. 실행 결과는 아래 equity curve와 trade log로 이어집니다.</p>
+                    </div>
+                    <div class="section-pill">Interactive Backtests</div>
+                </div>
+                <div class="studio-body">
+                    <div class="strategy-grid" id="strategy-grid"></div>
+
+                    <div class="parameter-shell fade-swap" id="parameter-shell">
+                        <div class="subhead">
+                            <div>
+                                <h3 id="selected-strategy-title">전략을 불러오는 중입니다.</h3>
+                                <p id="selected-strategy-description" class="caption">잠시만 기다려주세요.</p>
+                            </div>
+                            <span class="strategy-family" id="selected-strategy-family">GENERAL</span>
+                        </div>
+                        <div class="parameter-grid" id="parameter-grid"></div>
+                    </div>
+
+                    <div class="field-grid" style="margin-top: 16px;">
+                        <div class="field-group">
+                            <label for="start-date">시작일</label>
+                            <input id="start-date" type="date">
+                        </div>
+                        <div class="field-group">
+                            <label for="end-date">종료일</label>
+                            <input id="end-date" type="date">
+                        </div>
+                        <div class="field-group">
+                            <label for="initial-cash">초기 자본</label>
+                            <input id="initial-cash" type="number" min="1000" step="1000" value="100000">
+                        </div>
+                    </div>
+
+                    <div class="field-grid" style="margin-top: 14px;">
+                        <div class="field-group">
+                            <label for="max-points">곡선 포인트 수</label>
+                            <input id="max-points" type="number" min="50" max="1000" step="10" value="220">
+                        </div>
+                        <div class="field-group">
+                            <label>데이터 티커 변환</label>
+                            <input id="resolved-ticker" type="text" value="-" readonly>
+                        </div>
+                        <div class="field-group">
+                            <label>TradingView 심볼</label>
+                            <input id="resolved-tradingview" type="text" value="-" readonly>
+                        </div>
+                    </div>
+
+                    <div class="action-row">
+                        <button class="action-button primary" id="run-backtest-button" type="button">백테스트 실행</button>
+                        <button class="action-button secondary" id="generate-lean-button" type="button">Lean 프로젝트 생성</button>
+                    </div>
+
+                    <div class="note-list" id="studio-notes" style="margin-top: 16px;"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="results-grid">
+            <article class="panel">
+                <div class="panel-head">
+                    <div class="section-head">
+                        <h3>Backtest Results</h3>
+                        <p>전략 수익곡선과 벤치마크를 같이 보면서 수익률, MDD, 샤프, 승률을 한 번에 비교합니다.</p>
+                    </div>
+                    <div class="section-pill" id="result-status-pill">Ready</div>
+                </div>
+                <div class="results-body">
+                    <div class="metric-grid">
+                        <div class="metric-card accent">
+                            <span>Total Return</span>
+                            <strong id="metric-total-return">-</strong>
+                        </div>
+                        <div class="metric-card accent">
+                            <span>Annual Return</span>
+                            <strong id="metric-annual-return">-</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Benchmark</span>
+                            <strong id="metric-benchmark-return">-</strong>
+                        </div>
+                        <div class="metric-card danger">
+                            <span>Max Drawdown</span>
+                            <strong id="metric-drawdown">-</strong>
+                        </div>
+                        <div class="metric-card warn">
+                            <span>Sharpe</span>
+                            <strong id="metric-sharpe">-</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Win Rate</span>
+                            <strong id="metric-win-rate">-</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Exposure</span>
+                            <strong id="metric-exposure">-</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Trades</span>
+                            <strong id="metric-trades">-</strong>
+                        </div>
+                    </div>
+
+                    <div class="equity-shell">
+                        <div class="equity-head">
+                            <div>
+                                <h3 id="equity-title">전략 수익곡선</h3>
+                                <p class="caption" id="equity-subtitle">백테스트를 실행하면 전략과 벤치마크가 이곳에 표시됩니다.</p>
+                            </div>
+                            <div class="legend">
+                                <span class="strategy">Strategy</span>
+                                <span class="benchmark">Benchmark</span>
+                            </div>
+                        </div>
+                        <div class="equity-chart" id="equity-chart">
+                            <div class="chart-empty">백테스트를 실행하면 여기에서 equity curve를 볼 수 있습니다.</div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-head">
+                    <div class="section-head">
+                        <h3>Trade Log & Lean Export</h3>
+                        <p>트레이드 타이밍과 최근 Lean 스캐폴드 생성 이력을 같이 확인할 수 있습니다.</p>
+                    </div>
+                    <div class="section-pill">Research Handoff</div>
+                </div>
+                <div class="trade-body">
+                    <div class="info-shell">
+                        <div class="subhead">
+                            <div>
+                                <h3>최근 Lean 생성 결과</h3>
+                                <p class="caption">백테스트 후 마음에 드는 조합은 바로 Lean 프로젝트로 내보낼 수 있습니다.</p>
+                            </div>
+                        </div>
+                        <div class="note-list" id="lean-export-notes">
+                            <div class="note">아직 Lean 프로젝트를 생성하지 않았습니다.</div>
+                        </div>
+                    </div>
+
+                    <div class="info-shell" style="margin-top: 16px;">
+                        <div class="subhead">
+                            <div>
+                                <h3>Trade Log</h3>
+                                <p class="caption">전략 진입과 청산 흐름을 간단히 볼 수 있습니다.</p>
+                            </div>
+                        </div>
+                        <div style="overflow:auto;">
+                            <table class="trade-table" id="trade-table">
+                                <thead>
+                                    <tr>
+                                        <th>진입일</th>
+                                        <th>청산일</th>
+                                        <th>진입가</th>
+                                        <th>청산가</th>
+                                        <th>수익률</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="5" class="caption">아직 트레이드 결과가 없습니다.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="runs-shell" style="margin-top: 16px;">
+                        <div class="subhead">
+                            <div>
+                                <h3>Recent Lean Runs</h3>
+                                <p class="caption">생성된 프로젝트 스냅샷을 빠르게 되돌아볼 수 있습니다.</p>
+                            </div>
+                        </div>
+                        <div class="run-list" id="run-list">
+                            <div class="run-item">
+                                <strong>생성된 Lean run이 없습니다.</strong>
+                                <small>우측 상단의 전략 설정 후 Lean 프로젝트 생성 버튼을 눌러보세요.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </section>
+    </div>
+
+    <script>
+        const state = {
+            health: null,
+            framework: null,
+            strategies: [],
+            selectedStrategy: null,
+            chartContext: null,
+            lastBacktest: null,
+            runs: [],
+            tradingViewWidget: null,
+            tradingViewPromise: null,
+        };
+
+        const elements = {
+            healthStatus: document.getElementById("health-status"),
+            strategyCount: document.getElementById("strategy-count"),
+            runCount: document.getElementById("run-count"),
+            frameworkSummary: document.getElementById("framework-summary"),
+            projectsDir: document.getElementById("projects-dir"),
+            marketSelect: document.getElementById("market-select"),
+            tickerInput: document.getElementById("ticker-input"),
+            loadChartButton: document.getElementById("load-chart-button"),
+            chartOverlay: document.getElementById("chart-overlay"),
+            chartOverlayText: document.getElementById("chart-overlay-text"),
+            chartNotes: document.getElementById("chart-notes"),
+            strategyGrid: document.getElementById("strategy-grid"),
+            parameterShell: document.getElementById("parameter-shell"),
+            selectedStrategyTitle: document.getElementById("selected-strategy-title"),
+            selectedStrategyDescription: document.getElementById("selected-strategy-description"),
+            selectedStrategyFamily: document.getElementById("selected-strategy-family"),
+            parameterGrid: document.getElementById("parameter-grid"),
+            startDate: document.getElementById("start-date"),
+            endDate: document.getElementById("end-date"),
+            initialCash: document.getElementById("initial-cash"),
+            maxPoints: document.getElementById("max-points"),
+            resolvedTicker: document.getElementById("resolved-ticker"),
+            resolvedTradingview: document.getElementById("resolved-tradingview"),
+            studioNotes: document.getElementById("studio-notes"),
+            runBacktestButton: document.getElementById("run-backtest-button"),
+            generateLeanButton: document.getElementById("generate-lean-button"),
+            resultStatusPill: document.getElementById("result-status-pill"),
+            equityTitle: document.getElementById("equity-title"),
+            equitySubtitle: document.getElementById("equity-subtitle"),
+            equityChart: document.getElementById("equity-chart"),
+            tradeTable: document.getElementById("trade-table").querySelector("tbody"),
+            runList: document.getElementById("run-list"),
+            watchlistRow: document.getElementById("watchlist-row"),
+            leanExportNotes: document.getElementById("lean-export-notes"),
+            metricTotalReturn: document.getElementById("metric-total-return"),
+            metricAnnualReturn: document.getElementById("metric-annual-return"),
+            metricBenchmarkReturn: document.getElementById("metric-benchmark-return"),
+            metricDrawdown: document.getElementById("metric-drawdown"),
+            metricSharpe: document.getElementById("metric-sharpe"),
+            metricWinRate: document.getElementById("metric-win-rate"),
+            metricExposure: document.getElementById("metric-exposure"),
+            metricTrades: document.getElementById("metric-trades"),
+        };
+
+        function defaultDate(daysBack) {
+            const target = new Date();
+            target.setDate(target.getDate() - daysBack);
+            return target.toISOString().slice(0, 10);
+        }
+
+        function formatPercent(value) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return "-";
+            }
+            return `${(value * 100).toFixed(2)}%`;
+        }
+
+        function formatNumber(value) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return "-";
+            }
+            return Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
+        }
+
+        function formatCash(value) {
+            if (value === null || value === undefined || Number.isNaN(value)) {
+                return "-";
+            }
+            return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+        }
+
+        async function fetchJson(url, options = {}) {
+            const response = await fetch(url, {
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                },
+                ...options,
+            });
+
+            const isJson = response.headers.get("content-type")?.includes("application/json");
+            const payload = isJson ? await response.json() : await response.text();
+
+            if (!response.ok) {
+                const message = typeof payload === "object" ? payload.detail || JSON.stringify(payload) : payload;
+                throw new Error(message);
+            }
+            return payload;
+        }
+
+        function renderNotes(target, notes) {
+            if (!notes || !notes.length) {
+                target.innerHTML = '<div class="note">표시할 메모가 없습니다.</div>';
+                return;
+            }
+            target.innerHTML = notes.map((note) => `<div class="note">${note}</div>`).join("");
+        }
+
+        function renderStrategyCards() {
+            elements.strategyGrid.innerHTML = state.strategies.map((strategy) => `
+                <button
+                    class="strategy-card ${state.selectedStrategy && state.selectedStrategy.key === strategy.key ? "active" : ""}"
+                    type="button"
+                    data-strategy-key="${strategy.key}"
+                >
+                    <span class="strategy-family">${strategy.family}</span>
+                    <strong>${strategy.name}</strong>
+                    <p>${strategy.description}</p>
+                </button>
+            `).join("");
+
+            elements.strategyGrid.querySelectorAll("[data-strategy-key]").forEach((button) => {
+                button.addEventListener("click", () => selectStrategy(button.dataset.strategyKey));
+            });
+        }
+
+        function renderParameterForm() {
+            if (!state.selectedStrategy) {
+                return;
+            }
+
+            elements.parameterShell.classList.remove("fade-swap");
+            void elements.parameterShell.offsetWidth;
+            elements.parameterShell.classList.add("fade-swap");
+
+            elements.selectedStrategyTitle.textContent = state.selectedStrategy.name;
+            elements.selectedStrategyDescription.textContent = state.selectedStrategy.description;
+            elements.selectedStrategyFamily.textContent = state.selectedStrategy.family.replaceAll("_", " ");
+
+            elements.parameterGrid.innerHTML = state.selectedStrategy.parameters.map((param) => `
+                <div class="param-group">
+                    <label for="param-${param.name}">${param.description}</label>
+                    <input
+                        id="param-${param.name}"
+                        type="number"
+                        step="any"
+                        value="${param.default}"
+                        data-param-name="${param.name}"
+                    >
+                </div>
+            `).join("");
+        }
+
+        function selectStrategy(strategyKey) {
+            state.selectedStrategy = state.strategies.find((strategy) => strategy.key === strategyKey) || state.strategies[0];
+            renderStrategyCards();
+            renderParameterForm();
+        }
+
+        function collectRequestBase() {
+            const parameters = {};
+            elements.parameterGrid.querySelectorAll("[data-param-name]").forEach((input) => {
+                parameters[input.dataset.paramName] = input.value;
+            });
+
+            return {
+                strategy_key: state.selectedStrategy?.key || "sma_cross",
+                ticker: elements.tickerInput.value.trim(),
+                market: elements.marketSelect.value,
+                start_date: elements.startDate.value,
+                end_date: elements.endDate.value,
+                resolution: "DAILY",
+                initial_cash: Number(elements.initialCash.value),
+                parameters,
+            };
+        }
+
+        async function refreshChartContext() {
+            const ticker = elements.tickerInput.value.trim();
+            if (!ticker) {
+                throw new Error("티커를 입력해주세요.");
+            }
+
+            state.chartContext = await fetchJson(`/api/quant/chart-context?ticker=${encodeURIComponent(ticker)}&market=${encodeURIComponent(elements.marketSelect.value)}`);
+            elements.resolvedTicker.value = state.chartContext.data_ticker;
+            elements.resolvedTradingview.value = state.chartContext.tradingview_symbol;
+            renderNotes(elements.chartNotes, [
+                `입력 티커: ${state.chartContext.ticker}`,
+                `백테스트 데이터 티커: ${state.chartContext.data_ticker}`,
+                `TradingView 심볼: ${state.chartContext.tradingview_symbol}`,
+                ...state.chartContext.notes,
+            ]);
+        }
+
+        function setChartOverlay(message, hidden = false) {
+            elements.chartOverlayText.textContent = message;
+            elements.chartOverlay.classList.toggle("hidden", hidden);
+        }
+
+        function ensureTradingView() {
+            if (window.TradingView && typeof window.TradingView.widget === "function") {
+                return Promise.resolve(window.TradingView);
+            }
+
+            if (!state.tradingViewPromise) {
+                state.tradingViewPromise = new Promise((resolve, reject) => {
+                    const existing = document.getElementById("tradingview-script");
+                    if (existing) {
+                        existing.addEventListener("load", () => resolve(window.TradingView));
+                        existing.addEventListener("error", () => reject(new Error("TradingView script failed to load")));
+                        return;
+                    }
+
+                    const script = document.createElement("script");
+                    script.id = "tradingview-script";
+                    script.src = "https://s3.tradingview.com/tv.js";
+                    script.async = true;
+                    script.onload = () => resolve(window.TradingView);
+                    script.onerror = () => reject(new Error("TradingView script failed to load"));
+                    document.head.appendChild(script);
+                });
+            }
+
+            return state.tradingViewPromise;
+        }
+
+        async function loadChart() {
+            try {
+                setChartOverlay("차트 컨텍스트를 확인하고 있습니다.", false);
+                elements.loadChartButton.disabled = true;
+                syncWatchlistSelection();
+                await refreshChartContext();
+                const tradingView = await ensureTradingView();
+                document.getElementById("chart-widget").innerHTML = "";
+
+                state.tradingViewWidget = new tradingView.widget({
+                    autosize: true,
+                    symbol: state.chartContext.tradingview_symbol,
+                    interval: "D",
+                    timezone: "Etc/UTC",
+                    theme: "dark",
+                    style: "1",
+                    locale: "kr",
+                    enable_publishing: false,
+                    save_image: false,
+                    allow_symbol_change: true,
+                    hide_side_toolbar: false,
+                    container_id: "chart-widget",
+                });
+
+                setChartOverlay("차트를 불러왔습니다.", true);
+            } catch (error) {
+                setChartOverlay(error.message || "차트를 불러오지 못했습니다.", false);
+                renderNotes(elements.chartNotes, [`차트 로드 실패: ${error.message}`]);
+            } finally {
+                elements.loadChartButton.disabled = false;
+            }
+        }
+
+        function renderMetrics(result) {
+            elements.metricTotalReturn.textContent = formatPercent(result.metrics.total_return);
+            elements.metricAnnualReturn.textContent = formatPercent(result.metrics.annual_return);
+            elements.metricBenchmarkReturn.textContent = formatPercent(result.metrics.benchmark_return);
+            elements.metricDrawdown.textContent = formatPercent(result.metrics.max_drawdown);
+            elements.metricSharpe.textContent = result.metrics.sharpe_ratio.toFixed(2);
+            elements.metricWinRate.textContent = formatPercent(result.metrics.win_rate);
+            elements.metricExposure.textContent = formatPercent(result.metrics.exposure);
+            elements.metricTrades.textContent = String(result.metrics.trade_count);
+        }
+
+        function linePath(values, width, height, padding) {
+            const usableWidth = width - padding * 2;
+            const usableHeight = height - padding * 2;
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const range = max - min || 1;
+
+            return values.map((value, index) => {
+                const x = padding + (index / Math.max(values.length - 1, 1)) * usableWidth;
+                const y = padding + usableHeight - ((value - min) / range) * usableHeight;
+                return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+            }).join(" ");
+        }
+
+        function renderEquityChart(points, strategyName, ticker) {
+            if (!points || !points.length) {
+                elements.equityChart.innerHTML = '<div class="chart-empty">백테스트 결과가 없습니다.</div>';
+                return;
+            }
+
+            const width = 760;
+            const height = 320;
+            const padding = 26;
+            const strategyValues = points.map((point) => point.strategy_equity);
+            const benchmarkValues = points.map((point) => point.benchmark_equity);
+            const allValues = [...strategyValues, ...benchmarkValues];
+            const min = Math.min(...allValues);
+            const max = Math.max(...allValues);
+            const yLabels = [max, (min + max) / 2, min];
+
+            const strategyPath = linePath(strategyValues, width, height, padding);
+            const benchmarkPath = linePath(benchmarkValues, width, height, padding);
+            const lastPoint = points[points.length - 1];
+
+            elements.equityTitle.textContent = `${strategyName} · ${ticker}`;
+            elements.equitySubtitle.textContent = `${points[0].date}부터 ${lastPoint.date}까지의 전략 수익곡선과 벤치마크 비교`;
+
+            elements.equityChart.innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Equity curve">
+                    <defs>
+                        <linearGradient id="strategyGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="rgba(11, 122, 88, 0.22)"></stop>
+                            <stop offset="100%" stop-color="rgba(11, 122, 88, 0.02)"></stop>
+                        </linearGradient>
+                    </defs>
+                    ${yLabels.map((label, index) => {
+                        const y = padding + (index / 2) * (height - padding * 2);
+                        return `
+                            <line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="rgba(23, 48, 39, 0.08)" stroke-dasharray="5 8" />
+                            <text x="${padding}" y="${y - 8}" fill="rgba(100, 117, 109, 0.9)" font-size="11">${formatCash(label)}</text>
+                        `;
+                    }).join("")}
+                    <path d="${benchmarkPath}" fill="none" stroke="rgba(210, 139, 45, 0.95)" stroke-width="3" stroke-linecap="round"></path>
+                    <path d="${strategyPath}" fill="none" stroke="rgba(11, 122, 88, 0.98)" stroke-width="4" stroke-linecap="round"></path>
+                    <circle cx="${width - padding}" cy="${height - padding}" r="0"></circle>
+                    <text x="${width - padding}" y="${height - 10}" text-anchor="end" fill="rgba(100, 117, 109, 0.9)" font-size="11">${lastPoint.date}</text>
+                </svg>
+            `;
+        }
+
+        function renderTrades(trades) {
+            if (!trades || !trades.length) {
+                elements.tradeTable.innerHTML = '<tr><td colspan="5" class="caption">트레이드가 없습니다.</td></tr>';
+                return;
+            }
+
+            elements.tradeTable.innerHTML = trades.slice(0, 10).map((trade) => `
+                <tr>
+                    <td>${trade.entered_at}</td>
+                    <td>${trade.exited_at || "보유중"}</td>
+                    <td>${formatCash(trade.entry_price)}</td>
+                    <td>${trade.exit_price ? formatCash(trade.exit_price) : "-"}</td>
+                    <td>${trade.return_pct !== null ? formatPercent(trade.return_pct) : "-"}</td>
+                </tr>
+            `).join("");
+        }
+
+        function renderRuns() {
+            elements.runCount.textContent = state.runs.length;
+            if (!state.runs.length) {
+                elements.runList.innerHTML = `
+                    <div class="run-item">
+                        <strong>생성된 Lean run이 없습니다.</strong>
+                        <small>전략을 고른 뒤 Lean 프로젝트 생성 버튼을 눌러보세요.</small>
+                    </div>
+                `;
+                return;
+            }
+
+            elements.runList.innerHTML = state.runs.slice(0, 6).map((run) => `
+                <div class="run-item">
+                    <strong>${run.strategy.name} · ${run.ticker}</strong>
+                    <small>${run.artifact.project_name} / ${run.status}</small>
+                </div>
+            `).join("");
+        }
+
+        function syncWatchlistSelection() {
+            const market = elements.marketSelect.value;
+            const ticker = elements.tickerInput.value.trim().toUpperCase();
+
+            elements.watchlistRow.querySelectorAll(".chip").forEach((chip) => {
+                const matches = chip.dataset.market === market && chip.dataset.ticker.toUpperCase() === ticker;
+                chip.classList.toggle("active", matches);
+            });
+        }
+
+        async function refreshRuns() {
+            state.runs = await fetchJson("/api/quant/runs");
+            renderRuns();
+        }
+
+        async function runBacktest() {
+            try {
+                elements.runBacktestButton.disabled = true;
+                elements.resultStatusPill.textContent = "Running";
+                elements.resultStatusPill.style.background = "rgba(210, 139, 45, 0.16)";
+                renderNotes(elements.studioNotes, ["백테스트를 실행하고 있습니다."]);
+
+                const result = await fetchJson("/api/quant/backtests", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        ...collectRequestBase(),
+                        max_points: Number(elements.maxPoints.value),
+                    }),
+                });
+
+                state.lastBacktest = result;
+                renderMetrics(result);
+                renderEquityChart(result.equity_curve, result.strategy.name, result.ticker);
+                renderTrades(result.trades);
+                renderNotes(elements.studioNotes, result.notes);
+                elements.resultStatusPill.textContent = "Backtest Ready";
+                elements.resultStatusPill.style.background = "rgba(11, 122, 88, 0.14)";
+            } catch (error) {
+                elements.resultStatusPill.textContent = "Backtest Error";
+                elements.resultStatusPill.style.background = "rgba(178, 84, 79, 0.16)";
+                renderNotes(elements.studioNotes, [`백테스트 실패: ${error.message}`]);
+            } finally {
+                elements.runBacktestButton.disabled = false;
+            }
+        }
+
+        async function generateLeanProject() {
+            try {
+                elements.generateLeanButton.disabled = true;
+                renderNotes(elements.leanExportNotes, ["Lean 프로젝트 스캐폴드를 생성하고 있습니다."]);
+
+                const result = await fetchJson("/api/quant/lean/projects", {
+                    method: "POST",
+                    body: JSON.stringify(collectRequestBase()),
+                });
+
+                renderNotes(elements.leanExportNotes, [
+                    `프로젝트명: ${result.artifact.project_name}`,
+                    `경로: ${result.artifact.project_dir}`,
+                    `추천 실행 명령: ${result.artifact.suggested_command}`,
+                    ...result.notes,
+                ]);
+
+                await refreshRuns();
+            } catch (error) {
+                renderNotes(elements.leanExportNotes, [`Lean 프로젝트 생성 실패: ${error.message}`]);
+            } finally {
+                elements.generateLeanButton.disabled = false;
+            }
+        }
+
+        async function loadFramework() {
+            const [health, framework] = await Promise.all([
+                fetchJson("/api/healthz"),
+                fetchJson("/api/quant/framework"),
+            ]);
+
+            state.health = health;
+            state.framework = framework;
+            elements.healthStatus.textContent = health.status === "ok" ? "API 정상" : "API 점검 필요";
+            elements.frameworkSummary.textContent = framework.description;
+            elements.projectsDir.textContent = framework.default_projects_dir;
+        }
+
+        async function loadStrategies() {
+            state.strategies = await fetchJson("/api/quant/strategies");
+            elements.strategyCount.textContent = state.strategies.length;
+            selectStrategy(state.strategies[0]?.key || "sma_cross");
+        }
+
+        function bindEvents() {
+            elements.loadChartButton.addEventListener("click", loadChart);
+            elements.runBacktestButton.addEventListener("click", runBacktest);
+            elements.generateLeanButton.addEventListener("click", generateLeanProject);
+            elements.marketSelect.addEventListener("change", () => {
+                syncWatchlistSelection();
+                loadChart();
+            });
+            elements.tickerInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    loadChart();
+                }
+            });
+            elements.watchlistRow.querySelectorAll(".chip").forEach((button) => {
+                button.addEventListener("click", () => {
+                    elements.marketSelect.value = button.dataset.market;
+                    elements.tickerInput.value = button.dataset.ticker;
+                    syncWatchlistSelection();
+                    loadChart();
+                });
+            });
+        }
+
+        async function init() {
+            elements.startDate.value = defaultDate(540);
+            elements.endDate.value = defaultDate(0);
+            bindEvents();
+
+            try {
+                await loadFramework();
+                await loadStrategies();
+                await refreshRuns();
+                await loadChart();
+            } catch (error) {
+                elements.healthStatus.textContent = `초기화 실패: ${error.message}`;
+                renderNotes(elements.studioNotes, [`초기화 실패: ${error.message}`]);
+                renderNotes(elements.chartNotes, [`초기화 실패: ${error.message}`]);
+            }
+        }
+
+        init();
+    </script>
 </body>
 </html>

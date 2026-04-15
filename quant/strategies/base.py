@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+import pandas as pd
+
 from ..models import StrategyMetadata, StrategyParameter, StrategyRequest
 
 
@@ -11,6 +13,7 @@ class StrategySpec(ABC):
     name: str = ""
     description: str = ""
     lean_class_name: str = ""
+    family: str = "general"
     parameter_definitions: tuple[StrategyParameter, ...] = tuple()
 
     def metadata(self) -> StrategyMetadata:
@@ -20,6 +23,7 @@ class StrategySpec(ABC):
             description=self.description,
             lean_class_name=self.lean_class_name,
             parameters=list(self.parameter_definitions),
+            family=self.family,
         )
 
     def default_parameters(self) -> dict[str, str]:
@@ -60,4 +64,8 @@ class StrategySpec(ABC):
 
     @abstractmethod
     def render_lean_algorithm(self, request: StrategyRequest) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def compute_positions(self, frame: pd.DataFrame, request: StrategyRequest) -> pd.Series:
         raise NotImplementedError

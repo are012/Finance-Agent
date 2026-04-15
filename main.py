@@ -7,7 +7,7 @@ from typing import Any
 
 import uvicorn
 
-from quant.models import AccountMode, OrderIntent, OrderSide, StrategyRequest
+from quant.models import AccountMode, BacktestRequest, OrderIntent, OrderSide, StrategyRequest
 from quant.runtime.service import QuantFrameworkService
 
 
@@ -43,6 +43,17 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("framework-info", help="Print framework metadata.")
     subparsers.add_parser("list-strategies", help="List available strategy templates.")
     subparsers.add_parser("list-runs", help="List generated Lean runs.")
+
+    backtest_parser = subparsers.add_parser("run-backtest", help="Run the interactive local backtest engine.")
+    backtest_parser.add_argument("--strategy-key", default="sma_cross")
+    backtest_parser.add_argument("--ticker", required=True)
+    backtest_parser.add_argument("--market", default="usa_equity")
+    backtest_parser.add_argument("--start-date", default="2023-01-01")
+    backtest_parser.add_argument("--end-date")
+    backtest_parser.add_argument("--resolution", default="DAILY")
+    backtest_parser.add_argument("--initial-cash", type=float, default=100000.0)
+    backtest_parser.add_argument("--max-points", type=int, default=220)
+    backtest_parser.add_argument("--param", action="append", default=[])
 
     project_parser = subparsers.add_parser("create-project", help="Generate a Lean project scaffold.")
     project_parser.add_argument("--strategy-key", default="sma_cross")
@@ -97,6 +108,21 @@ def main() -> None:
 
     if args.command == "list-runs":
         _print_json(service.list_runs())
+        return
+
+    if args.command == "run-backtest":
+        request = BacktestRequest(
+            strategy_key=args.strategy_key,
+            ticker=args.ticker,
+            market=args.market,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            resolution=args.resolution,
+            initial_cash=args.initial_cash,
+            max_points=args.max_points,
+            parameters=_parse_key_value_pairs(args.param),
+        )
+        _print_json(service.run_backtest(request))
         return
 
     if args.command == "create-project":

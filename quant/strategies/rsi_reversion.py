@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from ..models import StrategyParameter, StrategyRequest
 from .base import StrategySpec
 
@@ -9,6 +11,7 @@ class RsiMeanReversionStrategy(StrategySpec):
     name = "RSI Mean Reversion"
     description = "Buys oversold conditions and exits when RSI mean-reverts."
     lean_class_name = "RsiMeanReversionAlgorithm"
+    family = "mean_reversion"
     parameter_definitions = (
         StrategyParameter(
             name="rsi_period",
@@ -94,3 +97,29 @@ class {self.lean_class_name}(QCAlgorithm):
         elif invested and rsi_value >= self.exit_threshold:
             self.liquidate(self.symbol)
 """
+
+    def compute_positions(self, frame: pd.DataFrame, request: StrategyRequest) -> pd.Series:
+        parameters = self.resolve_parameters(request)
+        rsi_period = int(parameters["rsi_period"])
+        oversold_threshold = float(parameters["oversold_threshold"])
+        exit_threshold = float(parameters["exit_threshold"])
+        position_size = float(parameters["position_size"])
+
+        delta = frame["close"].diff()
+        gains = delta.clip(lower=0)
+        losses = -delta.clip(upper=0)
+        avg_gain = gains.ewm(alpha=1 / rsi_period, adjust=False).mean()
+        avg_loss = losses.ewm(alpha=1 / rsi_period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, pd.NA)
+        rsi = 100 - (100 / (1 + rs))
+
+        positions: list[float] = []
+        current_position = 0.0
+        for value in rsi.fillna(50.0):
+            if current_position == 0.0 and value <= oversold_threshold:
+                current_position = position_size
+            elif current_position > 0.0 and value >= exit_threshold:
+                current_position = 0.0
+            positions.append(current_position)
+
+        return pd.Series(positions, index=frame.index, dtype=float)

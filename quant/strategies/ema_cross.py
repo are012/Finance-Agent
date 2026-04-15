@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from ..models import StrategyParameter, StrategyRequest
 from .base import StrategySpec
 
@@ -9,6 +11,7 @@ class ExponentialMovingAverageCrossStrategy(StrategySpec):
     name = "Exponential Moving Average Cross"
     description = "Trend-following strategy using fast and slow exponential moving averages."
     lean_class_name = "ExponentialMovingAverageCrossAlgorithm"
+    family = "trend"
     parameter_definitions = (
         StrategyParameter(
             name="fast_period",
@@ -88,3 +91,15 @@ class {self.lean_class_name}(QCAlgorithm):
         elif invested and fast_value < slow_value:
             self.liquidate(self.symbol)
 """
+
+    def compute_positions(self, frame: pd.DataFrame, request: StrategyRequest) -> pd.Series:
+        parameters = self.resolve_parameters(request)
+        fast_period = int(parameters["fast_period"])
+        slow_period = int(parameters["slow_period"])
+        position_size = float(parameters["position_size"])
+
+        fast = frame["close"].ewm(span=fast_period, adjust=False).mean()
+        slow = frame["close"].ewm(span=slow_period, adjust=False).mean()
+        positions = pd.Series(0.0, index=frame.index)
+        positions.loc[fast > slow] = position_size
+        return positions.fillna(0.0)

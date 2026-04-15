@@ -8,6 +8,9 @@ from fastapi.responses import HTMLResponse
 
 from quant import QuantFrameworkService
 from quant.models import (
+    BacktestRequest,
+    BacktestResponse,
+    ChartContext,
     FrameworkInfo,
     OrderExecutionResult,
     OrderIntent,
@@ -45,9 +48,29 @@ async def get_quant_strategies():
     return quant_framework.list_strategies()
 
 
+@app.get("/api/quant/chart-context", response_model=ChartContext)
+async def get_chart_context(ticker: str, market: str = "usa_equity"):
+    try:
+        return quant_framework.resolve_chart_context(ticker=ticker, market=market)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/quant/runs", response_model=list[QuantRun])
 async def list_quant_runs():
     return quant_framework.list_runs()
+
+
+@app.post("/api/quant/backtests", response_model=BacktestResponse)
+async def run_backtest(req: BacktestRequest):
+    try:
+        return quant_framework.run_backtest(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/quant/lean/projects", response_model=QuantRun)

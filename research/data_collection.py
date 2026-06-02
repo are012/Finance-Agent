@@ -13,12 +13,13 @@ from research.data_sources.fdr import collect_fdr_ohlcv
 from research.data_sources.krx_csv import collect_krx_csv
 from research.data_sources.pykrx import collect_pykrx_ohlcv
 from research.reporting import FORBIDDEN_DATA
-from research.schema import ALLOWED_COLUMNS, apply_universe_filters, validate_ohlcv_frame
+from research.schema import ALLOWED_COLUMNS, REQUIRED_COLUMNS, apply_universe_filters, validate_ohlcv_frame
 from research.utils import file_hash, git_hash, utc_stamp
 
 SOURCE_TYPES = {"krx_csv", "pykrx", "fdr"}
 PROCESSED_FORMATS = {"csv", "parquet"}
 STATUS_FILE_STATUSES = {"delisted", "admin", "suspended"}
+DEFAULT_STATUS_PRECEDENCE = ["admin", "suspended", "delisted"]
 ZERO_ROW_POLICIES = {"error", "write_empty"}
 CANONICAL_OHLCV_COLUMNS = [
     "date",
@@ -95,6 +96,18 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
 
     processed_frame = apply_universe_filters(staging_frame, _filter_config(config.get("filters", {})))
     _write_processed_frame(processed_frame, processed_path, processed_format)
+    data_quality_report = _write_data_quality_report(
+        raw_frame=raw_frame,
+        processed_frame=processed_frame,
+        processed_dir=processed_dir,
+        output=output,
+    )
+    research_config_file = _write_research_config_if_requested(
+        output=output,
+        processed_dir=processed_dir,
+        processed_path=processed_path,
+        processed_format=processed_format,
+    )
 
     manifest = _manifest(
         config=config,
@@ -110,6 +123,9 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
         processed_path=processed_path,
         processed_format=processed_format,
         zero_row_policy=zero_row_policy,
+        status_precedence=_status_precedence(config.get("status_files", {})),
+        data_quality_report=data_quality_report,
+        research_config_file=research_config_file,
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8")
     manifest["manifest_path"] = str(manifest_path)
@@ -146,7 +162,13 @@ def _validate_collection_config(config: dict[str, Any]) -> None:
     status_files = config.get("status_files", {})
     if status_files and not isinstance(status_files, dict):
         raise ValueError("status_files must be a mapping of status to local file paths")
+    precedence = _status_precedence(status_files)
+    configured_statuses = {status for status in status_files if status != "precedence"}
+    if not configured_statuses.issubset(set(precedence)):
+        raise ValueError("status_files.precedence must include every configured status")
     for status, paths in status_files.items():
+        if status == "precedence":
+            continue
         if status not in STATUS_FILE_STATUSES:
             raise ValueError(f"Unsupported status_files key: {status}")
         for path_value in _as_path_list(paths):
@@ -223,11 +245,9 @@ def _input_files(source: dict[str, Any], raw_dir: Path) -> list[dict[str, Any]]:
     if source.get("type") != "krx_csv":
         return []
     files = []
-    for path_value in source.get("input_paths", []):
+    for index, path_value in enumerate(source.get("input_paths", [])):
         path = Path(path_value)
-        raw_copy = raw_dir / path.name
-        if path.resolve() != raw_copy.resolve():
-            shutil.copy2(path, raw_copy)
+        raw_copy = _copy_local_file(path, raw_dir, prefix=f"source_{index:03d}")
         files.append(
             {
                 "path": str(path),
@@ -247,9 +267,9 @@ def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_d
         data["listing_status"] = "listed"
     metadata = []
     decisions = list(data.attrs.get("schema_decisions", []))
-    for status in ("admin", "suspended", "delisted"):
-        for path_value in _as_path_list(status_files.get(status, [])):
-            raw_copy_path = _copy_local_file(path_value, raw_dir)
+    for status in _status_precedence(status_files):
+        for index, path_value in enumerate(_as_path_list(status_files.get(status, []))):
+            raw_copy_path = _copy_local_file(path_value, raw_dir, prefix=f"status_{status}_{index:03d}")
             status_frame = _read_status_file(path_value)
             before = data["listing_status"].copy()
             mask = _status_match_mask(data, status_frame)
@@ -271,6 +291,21 @@ def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_d
     return data, metadata
 
 
+def _status_precedence(status_files: dict[str, Any]) -> list[str]:
+    configured = status_files.get("precedence")
+    if configured is None:
+        return list(DEFAULT_STATUS_PRECEDENCE)
+    if not isinstance(configured, list) or not configured:
+        raise ValueError("status_files.precedence must be a non-empty list")
+    precedence = [str(status) for status in configured]
+    invalid = sorted(set(precedence) - STATUS_FILE_STATUSES)
+    if invalid:
+        raise ValueError(f"status_files.precedence contains unsupported statuses: {invalid}")
+    if len(precedence) != len(set(precedence)):
+        raise ValueError("status_files.precedence must not contain duplicates")
+    return precedence
+
+
 def _read_status_file(path: str | Path) -> pd.DataFrame:
     source_path = Path(path)
     if source_path.suffix.lower() == ".parquet":
@@ -288,8 +323,25 @@ def _read_status_file(path: str | Path) -> pd.DataFrame:
     result["symbol"] = result["symbol"].map(_normalize_symbol)
     for column in ("date", "start_date", "end_date"):
         if column in result.columns:
-            result[column] = pd.to_datetime(result[column], errors="coerce").dt.strftime("%Y-%m-%d")
+            result[column] = _parse_status_date_column(result[column], column=column, source_path=source_path)
+    if "start_date" in result.columns and "end_date" in result.columns:
+        start_dates = pd.to_datetime(result["start_date"], errors="coerce")
+        end_dates = pd.to_datetime(result["end_date"], errors="coerce")
+        invalid_range = start_dates.notna() & end_dates.notna() & (start_dates > end_dates)
+        if invalid_range.any():
+            raise ValueError(f"Invalid status file date range in {source_path}: start_date must be <= end_date")
     return result.drop_duplicates().reset_index(drop=True)
+
+
+def _parse_status_date_column(series: pd.Series, *, column: str, source_path: Path) -> pd.Series:
+    values = series.fillna("").astype(str).str.strip()
+    present = values.ne("")
+    parsed = pd.to_datetime(values.where(present), errors="coerce")
+    invalid = present & parsed.isna()
+    if invalid.any():
+        bad_values = sorted(set(values[invalid]))
+        raise ValueError(f"Invalid status file {column} value in {source_path}: {bad_values}")
+    return parsed.dt.strftime("%Y-%m-%d")
 
 
 def _status_match_mask(data: pd.DataFrame, status_frame: pd.DataFrame) -> pd.Series:
@@ -367,6 +419,124 @@ def _write_processed_frame(frame: pd.DataFrame, path: Path, processed_format: st
         frame.to_parquet(path, index=False)
         return
     raise ValueError(f"Unsupported processed output format: {processed_format}")
+
+
+def _write_data_quality_report(
+    *,
+    raw_frame: pd.DataFrame,
+    processed_frame: pd.DataFrame,
+    processed_dir: Path,
+    output: dict[str, Any],
+) -> dict[str, Any]:
+    json_path = processed_dir / output.get("data_quality_report_json_filename", "data_quality_report.json")
+    csv_path = processed_dir / output.get("data_quality_report_csv_filename", "data_quality_report.csv")
+    payload = _data_quality_payload(raw_frame=raw_frame, processed_frame=processed_frame)
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    _data_quality_rows(payload).to_csv(csv_path, index=False)
+    return {
+        "json": {"path": str(json_path), "sha256": file_hash(json_path)},
+        "csv": {"path": str(csv_path), "sha256": file_hash(csv_path)},
+    }
+
+
+def _data_quality_payload(*, raw_frame: pd.DataFrame, processed_frame: pd.DataFrame) -> dict[str, Any]:
+    processed = processed_frame.copy()
+    if processed.empty:
+        row_counts_by_symbol: dict[str, int] = {}
+        date_coverage = {"start": None, "end": None, "unique_dates": 0, "row_count": 0}
+        listing_status_counts: dict[str, int] = {}
+        market_counts: dict[str, int] = {}
+    else:
+        dates = pd.to_datetime(processed["date"], errors="raise")
+        row_counts_by_symbol = {str(key): int(value) for key, value in processed["symbol"].astype(str).value_counts().sort_index().items()}
+        date_coverage = {
+            "start": dates.min().strftime("%Y-%m-%d"),
+            "end": dates.max().strftime("%Y-%m-%d"),
+            "unique_dates": int(dates.nunique()),
+            "row_count": int(len(processed)),
+        }
+        listing_status_counts = {
+            str(key): int(value) for key, value in processed["listing_status"].fillna("missing").astype(str).value_counts().sort_index().items()
+        }
+        market_counts = {str(key): int(value) for key, value in processed["market"].astype(str).value_counts().sort_index().items()}
+    return {
+        "row_counts_by_symbol": row_counts_by_symbol,
+        "date_coverage": date_coverage,
+        "missing_required_columns": sorted(REQUIRED_COLUMNS - set(raw_frame.columns)),
+        "ohlc_anomaly_counts": _ohlc_anomaly_counts(raw_frame),
+        "listing_status_counts": listing_status_counts,
+        "market_counts": market_counts,
+        "duplicate_removal_summary": _duplicate_removal_summary(raw_frame),
+    }
+
+
+def _data_quality_rows(payload: dict[str, Any]) -> pd.DataFrame:
+    rows = []
+    for section, values in payload.items():
+        if isinstance(values, dict):
+            for key, value in values.items():
+                rows.append({"section": section, "key": key, "value": value})
+        else:
+            rows.append({"section": section, "key": "value", "value": values})
+    return pd.DataFrame(rows, columns=["section", "key", "value"])
+
+
+def _ohlc_anomaly_counts(frame: pd.DataFrame) -> dict[str, int]:
+    counts = {
+        "non_positive_price_rows": 0,
+        "high_below_low_rows": 0,
+        "high_below_open_rows": 0,
+        "high_below_close_rows": 0,
+        "low_above_open_rows": 0,
+        "low_above_close_rows": 0,
+        "negative_volume_or_traded_value_rows": 0,
+    }
+    required = {"open", "high", "low", "close", "volume", "traded_value"}
+    if not required.issubset(frame.columns):
+        return counts
+    numeric = frame[list(required)].apply(pd.to_numeric, errors="coerce")
+    counts["non_positive_price_rows"] = int((numeric[["open", "high", "low", "close"]] <= 0).any(axis=1).sum())
+    counts["high_below_low_rows"] = int((numeric["high"] < numeric["low"]).sum())
+    counts["high_below_open_rows"] = int((numeric["high"] < numeric["open"]).sum())
+    counts["high_below_close_rows"] = int((numeric["high"] < numeric["close"]).sum())
+    counts["low_above_open_rows"] = int((numeric["low"] > numeric["open"]).sum())
+    counts["low_above_close_rows"] = int((numeric["low"] > numeric["close"]).sum())
+    counts["negative_volume_or_traded_value_rows"] = int((numeric[["volume", "traded_value"]] < 0).any(axis=1).sum())
+    return counts
+
+
+def _duplicate_removal_summary(frame: pd.DataFrame) -> dict[str, int]:
+    if not {"date", "symbol"}.issubset(frame.columns):
+        return {"duplicate_date_symbol_rows": 0, "duplicate_date_symbol_keys": 0, "removed_rows": 0}
+    duplicate_rows = int(frame.duplicated(subset=["date", "symbol"], keep="last").sum())
+    duplicate_keys = int(frame.loc[frame.duplicated(subset=["date", "symbol"], keep=False), ["date", "symbol"]].drop_duplicates().shape[0])
+    return {
+        "duplicate_date_symbol_rows": duplicate_rows,
+        "duplicate_date_symbol_keys": duplicate_keys,
+        "removed_rows": duplicate_rows,
+    }
+
+
+def _write_research_config_if_requested(*, output: dict[str, Any], processed_dir: Path, processed_path: Path, processed_format: str) -> dict[str, Any] | None:
+    filename = output.get("research_config_filename")
+    if not filename:
+        return None
+    path = processed_dir / filename
+    template_path = Path(output.get("research_config_template", "configs/example.yaml"))
+    if template_path.exists():
+        with template_path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+    else:
+        payload = {}
+    payload["data"] = {
+        **dict(payload.get("data") or {}),
+        "path": str(processed_path),
+        "format": processed_format,
+        "date_column": "date",
+        "symbol_column": "symbol",
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return {"path": str(path), "sha256": file_hash(path)}
 
 
 def _retry_config(source: dict[str, Any]) -> dict[str, Any]:
@@ -451,6 +621,9 @@ def _manifest(
     processed_path: Path,
     processed_format: str,
     zero_row_policy: str,
+    status_precedence: list[str],
+    data_quality_report: dict[str, Any],
+    research_config_file: dict[str, Any] | None,
 ) -> dict[str, Any]:
     filters = config.get("filters", {})
     return {
@@ -461,6 +634,7 @@ def _manifest(
         "source": _source_manifest(source),
         "input_files": input_files,
         "status_files": status_files,
+        "status_precedence": status_precedence,
         "collection_results": collection_results,
         "zero_row_policy": zero_row_policy,
         "raw_rows": raw_rows,
@@ -469,6 +643,8 @@ def _manifest(
         "raw_dir": str(Path(config["output"].get("raw_dir", "data/raw"))),
         "staging_file": {"path": str(staging_path), "format": "csv", "sha256": file_hash(staging_path)},
         "processed_file": {"path": str(processed_path), "format": processed_format, "sha256": file_hash(processed_path)},
+        "data_quality_report": data_quality_report,
+        "research_config_file": research_config_file,
         "allowed_columns": sorted(ALLOWED_COLUMNS),
         "forbidden_data": FORBIDDEN_DATA,
         "market_filter": list(filters.get("markets", [])),
@@ -501,9 +677,9 @@ def _require_existing_file(path_value: str | Path, field: str) -> None:
         raise ValueError(f"{field} must reference an existing local file: {path}")
 
 
-def _copy_local_file(path_value: str | Path, raw_dir: Path) -> Path:
+def _copy_local_file(path_value: str | Path, raw_dir: Path, *, prefix: str) -> Path:
     path = Path(path_value)
-    raw_copy = raw_dir / path.name
+    raw_copy = raw_dir / f"{prefix}_{file_hash(path)[:12]}_{path.name}"
     if path.resolve() != raw_copy.resolve():
         shutil.copy2(path, raw_copy)
     return raw_copy

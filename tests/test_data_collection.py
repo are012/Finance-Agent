@@ -18,6 +18,7 @@ def _write_collection_config(
     output_extra: dict | None = None,
     status_files: dict | None = None,
 ) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     source = {
         "type": "krx_csv",
         "input_paths": [str(raw_path)],
@@ -212,18 +213,162 @@ def test_collect_data_merges_status_files_with_effective_date_ranges(tmp_path):
     processed = pd.read_csv(tmp_path / "processed" / "collected_ohlcv.csv", dtype={"symbol": str})
     assert processed["listing_status"].tolist() == ["listed", "admin", "admin", "listed"]
     manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["status_files"] == [
-        {
-            "status": "admin",
-            "path": str(admin_path),
-            "raw_copy_path": str(tmp_path / "raw" / "admin_range.csv"),
-            "sha256": manifest["status_files"][0]["sha256"],
-            "rows": 1,
-            "matched_rows": 2,
-            "changed_rows": 2,
-        }
-    ]
-    assert (tmp_path / "raw" / "admin_range.csv").exists()
+    status_entry = manifest["status_files"][0]
+    assert status_entry["status"] == "admin"
+    assert status_entry["path"] == str(admin_path)
+    assert status_entry["rows"] == 1
+    assert status_entry["matched_rows"] == 2
+    assert status_entry["changed_rows"] == 2
+    assert Path(status_entry["raw_copy_path"]).exists()
+    assert Path(status_entry["raw_copy_path"]).name.startswith("status_admin_000_")
+
+
+@pytest.mark.parametrize(
+    ("header", "row", "message"),
+    [
+        ("symbol,date", "000001,not-a-date", "date"),
+        ("symbol,start_date,end_date", "000001,not-a-date,2024-01-03", "start_date"),
+        ("symbol,start_date,end_date", "000001,2024-01-01,not-a-date", "end_date"),
+        ("symbol,start_date,end_date", "000001,2024-01-03,2024-01-01", "start_date must be <= end_date"),
+    ],
+)
+def test_collect_data_rejects_invalid_status_file_dates(tmp_path, header, row, message):
+    raw_path = tmp_path / "raw.csv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-02,000001,1000,1100,900,1050,100,105000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    admin_path = tmp_path / "admin_bad.csv"
+    admin_path.write_text(f"{header}\n{row}\n", encoding="utf-8")
+    config_path = _write_collection_config(tmp_path, raw_path=raw_path, status_files={"admin": [str(admin_path)]})
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "Invalid status file" in result.stderr
+    assert message in result.stderr
+
+
+def test_collect_data_uses_unique_raw_copy_paths_for_same_basename_files(tmp_path):
+    source_a = tmp_path / "source_a"
+    source_b = tmp_path / "source_b"
+    source_a.mkdir()
+    source_b.mkdir()
+    raw_a = source_a / "prices.csv"
+    raw_b = source_b / "prices.csv"
+    raw_a.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-02,000001,1000,1100,900,1050,100,105000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    raw_b.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-02,000002,2000,2100,1900,2050,100,205000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    status_a = source_a / "status.csv"
+    status_b = source_b / "status.csv"
+    status_a.write_text("symbol\n000001\n", encoding="utf-8")
+    status_b.write_text("symbol\n000002\n", encoding="utf-8")
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_a,
+        source_extra={"input_paths": [str(raw_a), str(raw_b)]},
+        status_files={"admin": [str(status_a), str(status_b)]},
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    raw_copies = [entry["raw_copy_path"] for entry in manifest["input_files"]]
+    status_copies = [entry["raw_copy_path"] for entry in manifest["status_files"]]
+    assert len(set(raw_copies)) == 2
+    assert len(set(status_copies)) == 2
+    assert all(Path(path).exists() for path in [*raw_copies, *status_copies])
+    assert Path(raw_copies[0]).name.startswith("source_000_")
+    assert Path(raw_copies[1]).name.startswith("source_001_")
+    assert Path(status_copies[0]).name.startswith("status_admin_000_")
+    assert Path(status_copies[1]).name.startswith("status_admin_001_")
+
+
+def test_collect_data_records_and_applies_status_precedence(tmp_path):
+    raw_path = tmp_path / "raw.csv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-02,000001,1000,1100,900,1050,100,105000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    admin_path = tmp_path / "admin.csv"
+    delisted_path = tmp_path / "delisted.csv"
+    admin_path.write_text("symbol\n000001\n", encoding="utf-8")
+    delisted_path.write_text("symbol\n000001\n", encoding="utf-8")
+
+    default_config = _write_collection_config(
+        tmp_path / "default",
+        raw_path=raw_path,
+        status_files={"admin": [str(admin_path)], "delisted": [str(delisted_path)]},
+    )
+    custom_config = _write_collection_config(
+        tmp_path / "custom",
+        raw_path=raw_path,
+        status_files={
+            "precedence": ["delisted", "admin"],
+            "admin": [str(admin_path)],
+            "delisted": [str(delisted_path)],
+        },
+    )
+
+    default_result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(default_config)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    custom_result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(custom_config)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert default_result.returncode == 0, default_result.stderr
+    assert custom_result.returncode == 0, custom_result.stderr
+    default_processed = pd.read_csv(tmp_path / "default" / "processed" / "collected_ohlcv.csv", dtype={"symbol": str})
+    custom_processed = pd.read_csv(tmp_path / "custom" / "processed" / "collected_ohlcv.csv", dtype={"symbol": str})
+    default_manifest = json.loads((tmp_path / "default" / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    custom_manifest = json.loads((tmp_path / "custom" / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    assert default_processed["listing_status"].iloc[0] == "delisted"
+    assert default_manifest["status_precedence"] == ["admin", "suspended", "delisted"]
+    assert custom_processed["listing_status"].iloc[0] == "admin"
+    assert custom_manifest["status_precedence"] == ["delisted", "admin"]
 
 
 def test_collect_data_writes_parquet_processed_output(tmp_path):
@@ -261,6 +406,7 @@ def test_collect_data_writes_parquet_processed_output(tmp_path):
         (lambda config: config["source"].update({"retry": {"attempts": 0}}), "retry.attempts"),
         (lambda config: config["source"].update({"rate_limit": {"sleep_seconds": -1}}), "rate_limit.sleep_seconds"),
         (lambda config: config.update({"zero_row_policy": "bad"}), "zero_row_policy"),
+        (lambda config: config.update({"status_files": {"precedence": ["admin", "bad"]}}), "status_files.precedence"),
         (
             lambda config: config["output"].update({"staging_filename": "same.csv", "processed_filename": "same.csv", "processed_dir": config["output"]["staging_dir"]}),
             "Output paths must not collide",
@@ -521,6 +667,73 @@ def test_fdr_manifest_records_estimated_traded_value_and_close_policy(tmp_path, 
     assert manifest["source"]["traded_value_policy"] == "estimated_close_times_volume"
     assert "estimates traded_value" in manifest["source"]["warnings"][0]
     assert manifest["source"]["adjusted_close_policy"] == "raw_close_copied_to_adjusted_close"
+
+
+def test_collect_data_writes_data_quality_reports(tmp_path):
+    raw_path = Path("data/sample/raw/krx_ohlcv_sample.csv")
+    config_path = _write_collection_config(tmp_path, raw_path=raw_path)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    report = manifest["data_quality_report"]
+    json_path = Path(report["json"]["path"])
+    csv_path = Path(report["csv"]["path"])
+    assert json_path.exists()
+    assert csv_path.exists()
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["row_counts_by_symbol"]["005930"] == 2
+    assert payload["date_coverage"]["start"] == "2024-01-02"
+    assert payload["date_coverage"]["end"] == "2024-01-03"
+    assert payload["missing_required_columns"] == []
+    assert payload["ohlc_anomaly_counts"] == {
+        "non_positive_price_rows": 0,
+        "high_below_low_rows": 0,
+        "high_below_open_rows": 0,
+        "high_below_close_rows": 0,
+        "low_above_open_rows": 0,
+        "low_above_close_rows": 0,
+        "negative_volume_or_traded_value_rows": 0,
+    }
+    assert payload["listing_status_counts"]["admin"] == 1
+    assert payload["market_counts"] == {"KOSPI": 5}
+    assert payload["duplicate_removal_summary"]["removed_rows"] == 1
+    quality_rows = pd.read_csv(csv_path)
+    assert {"section", "key", "value"}.issubset(quality_rows.columns)
+    assert report["json"]["sha256"]
+    assert report["csv"]["sha256"]
+
+
+def test_collect_data_optionally_writes_generated_research_config(tmp_path):
+    raw_path = Path("data/sample/raw/krx_ohlcv_sample.csv")
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_extra={"research_config_filename": "generated_research.yaml"},
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    research_config_path = Path(manifest["research_config_file"]["path"])
+    generated = yaml.safe_load(research_config_path.read_text(encoding="utf-8"))
+    assert generated["data"]["path"] == str(tmp_path / "processed" / "collected_ohlcv.csv")
+    assert generated["data"]["format"] == "csv"
+    assert generated["data"]["date_column"] == "date"
+    assert generated["data"]["symbol_column"] == "symbol"
+    assert manifest["research_config_file"]["sha256"]
 
 
 def test_optional_remote_sources_are_lazy_and_research_only(monkeypatch):

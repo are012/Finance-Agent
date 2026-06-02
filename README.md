@@ -46,7 +46,7 @@ Use the collection CLI to normalize local KRX CSV exports into the canonical OHL
 .venv/bin/python -m app.collect_data --config configs/data_collection.yaml
 ```
 
-The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, and listing-status counts.
+The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, listing-status counts, and data-quality report paths.
 
 Optional `status_files` can merge separate local CSV or Parquet files for suspended, delisted, and admin-issue symbols into `listing_status`. Status files require `symbol` and may include `date` or `start_date`/`end_date`; dated rows update only matching `date`/`symbol` observations, ranged rows update observations inside the effective range, and symbol-only rows update every observation for that symbol. Status files are copied into `raw_dir` and recorded in the manifest with hashes.
 
@@ -54,7 +54,9 @@ Set `output.processed_filename` to `.csv` or `.parquet`, or set `output.processe
 
 The preferred reproducible source is `krx_csv`, because it works fully offline. Optional `pykrx` and `fdr` source modules are available for research convenience through lazy imports, but tests and CI do not require internet access or those packages.
 
-For optional `pykrx` and `fdr` convenience sources, configure `source.retry.attempts`, `source.retry.backoff_seconds`, and `source.rate_limit.sleep_seconds`. The manifest records requested, successful, empty, and failed symbols so partial remote collection does not hide missing data. Remote sources default to `zero_row_policy: write_empty`, which writes canonical empty OHLCV outputs and a manifest when every requested symbol is empty or failed; set `zero_row_policy: error` to reject zero-row collections. The manifest also records provider metadata, adjusted-close policy notes, and FDR traded-value estimation warnings.
+For optional `pykrx` and `fdr` convenience sources, configure `source.retry.attempts`, `source.retry.backoff_seconds`, and `source.rate_limit.sleep_seconds`. The manifest records requested, successful, empty, and failed symbols so partial remote collection does not hide missing data. Remote sources default to `zero_row_policy: write_empty`, which is useful for audit runs and fixtures because it writes canonical empty OHLCV outputs and a manifest when every requested symbol is empty or failed. Use `zero_row_policy: error` for production refresh jobs so a zero-row collection fails fast. The manifest also records provider metadata, adjusted-close policy notes, and FDR traded-value estimation warnings.
+
+Each collection writes JSON and CSV data-quality reports with row counts by symbol, date coverage, missing required columns, OHLC anomaly counts, listing-status counts, market counts, and duplicate-removal summary. Set `output.research_config_filename` to emit a generated research config whose `data.path` points at the processed output.
 
 The processed CSV can be used by setting `configs/example.yaml`:
 

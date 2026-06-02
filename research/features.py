@@ -21,12 +21,20 @@ FEATURE_EXTRA_COLUMNS = {
 
 def add_chart_features(frame: pd.DataFrame, *, windows: list[int] | None = None) -> pd.DataFrame:
     windows = windows or [5, 20]
+    input_attrs = dict(getattr(frame, "attrs", {}))
     data = validate_ohlcv_frame(frame)
+    if "listing_status_profile" in input_attrs:
+        data.attrs["listing_status_profile"] = input_attrs["listing_status_profile"]
+    if "schema_decisions" in input_attrs:
+        data.attrs["schema_decisions"] = input_attrs["schema_decisions"]
     pieces = []
     for _, group in data.groupby("symbol", sort=False):
         pieces.append(_add_symbol_features(group.copy(), windows))
     featured = pd.concat(pieces, ignore_index=True)
-    return featured.sort_values(["symbol", "date"]).reset_index(drop=True)
+    featured = featured.sort_values(["symbol", "date"]).reset_index(drop=True)
+    featured.attrs["schema_decisions"] = list(data.attrs.get("schema_decisions", []))
+    featured.attrs["listing_status_profile"] = data.attrs.get("listing_status_profile", {})
+    return featured
 
 
 def _add_symbol_features(group: pd.DataFrame, windows: list[int]) -> pd.DataFrame:

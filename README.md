@@ -49,6 +49,22 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
+## Completion Audit
+
+Run the local completion audit from a clean generated-output state:
+
+```bash
+rm -rf outputs/ledger outputs/artifacts outputs/reports
+mkdir -p outputs/ledger outputs/artifacts outputs/reports
+python -m pytest -q
+python -m app.run_research --config configs/example.yaml --output-dir outputs
+python -m app.run_one_hypothesis --config configs/example.yaml --hypothesis configs/hypotheses/momentum_20.yaml --output-dir outputs
+python -m app.final_report --config configs/example.yaml --ledger outputs/ledger/experiments.jsonl --output-dir outputs/reports
+python -m app.final_report --config configs/example.yaml --ledger outputs/ledger/experiments.jsonl --output-dir outputs/reports
+```
+
+The second final-report command must reuse the locked final-holdout result rather than evaluating the final holdout again.
+
 ## Run One YAML Hypothesis
 
 ```bash
@@ -74,6 +90,8 @@ The research loop:
 - generates or loads one explicit hypothesis at a time,
 - executes close-based signals at the next available open,
 - applies commission, sell tax, slippage, liquidity caps, and partial-fill or rejection behavior,
+- records walk-forward validation and base-relative parameter-sensitivity summaries,
+- records listing-status availability and delisted/suspended counts for survivorship-bias review,
 - logs every experiment, including failures,
 - never evaluates the final holdout.
 
@@ -104,6 +122,8 @@ Report outputs:
 ## Hypothesis Format
 
 See `configs/hypotheses/`. Hypotheses must declare the strategy family, chart-only features, entry/exit rules, position sizing, cost assumptions, and falsification gates. Unsupported families, missing entry/exit rules, and forbidden non-chart features are rejected before execution. Invalid hypotheses loaded by the research loop are written to the ledger with a rejection reason.
+
+Forbidden-data validation checks the full hypothesis spec fields that can affect research decisions, including feature lists, `entry_rule`, `parameters`, and `notes`.
 
 Built-in strategy families include breakout, breakout with volume confirmation, moving-average trend, short-term reversal, volatility contraction breakout, gap continuation/reversal, RSI mean reversion, price-volume momentum, and traded-value momentum.
 

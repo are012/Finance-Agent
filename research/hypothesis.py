@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,7 @@ class Hypothesis:
     exit_rule: dict[str, Any] = field(default_factory=dict)
     position_sizing: dict[str, Any] = field(default_factory=dict)
     falsification: dict[str, Any] = field(default_factory=dict)
+    notes: list[Any] = field(default_factory=list)
     source_path: str | None = None
 
     def __post_init__(self) -> None:
@@ -106,6 +108,7 @@ class Hypothesis:
             "exit_rule": self.exit_rule,
             "position_sizing": self.position_sizing,
             "falsification": self.falsification,
+            "notes": self.notes,
             "source_path": self.source_path,
         }
 
@@ -141,6 +144,7 @@ def load_hypothesis_spec(path: str | Path) -> Hypothesis:
 
 
 def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = None) -> Hypothesis:
+    _reject_forbidden_spec_terms(payload)
     parameters = dict(payload.get("parameters") or {})
     exit_rule = dict(payload.get("exit_rule") or {})
     entry_rule = dict(payload.get("entry_rule") or {})
@@ -167,6 +171,7 @@ def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = N
         exit_rule=exit_rule,
         position_sizing=dict(payload.get("position_sizing") or {}),
         falsification=dict(payload.get("falsification") or {}),
+        notes=list(payload.get("notes") or []),
         source_path=source_path,
     )
 
@@ -235,6 +240,44 @@ def generate_hypotheses(budget: int) -> list[Hypothesis]:
 
 def _canonical_family(family: str) -> str:
     return FAMILY_ALIASES.get(family, family)
+
+
+def _reject_forbidden_spec_terms(payload: dict[str, Any]) -> None:
+    checked = {
+        "features": payload.get("features"),
+        "forbidden_features": payload.get("forbidden_features"),
+        "entry_rule": payload.get("entry_rule"),
+        "parameters": payload.get("parameters"),
+        "notes": payload.get("notes"),
+    }
+    violations = _forbidden_spec_violations(checked)
+    if violations:
+        details = ", ".join(f"{item['path']}={item['value']}" for item in violations)
+        raise ValueError(f"Forbidden non-chart data in hypothesis spec: {details}")
+
+
+def _forbidden_spec_violations(value: Any, path: str = "spec") -> list[dict[str, str]]:
+    violations = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            key_path = f"{path}.{key}"
+            if _contains_forbidden_term(str(key)):
+                violations.append({"path": key_path, "value": str(key)})
+            violations.extend(_forbidden_spec_violations(child, key_path))
+        return violations
+    if isinstance(value, (list, tuple, set)):
+        for index, child in enumerate(value):
+            violations.extend(_forbidden_spec_violations(child, f"{path}[{index}]"))
+        return violations
+    if value is not None and _contains_forbidden_term(str(value)):
+        violations.append({"path": path, "value": str(value)})
+    return violations
+
+
+def _contains_forbidden_term(value: str) -> bool:
+    lowered = value.lower()
+    tokens = [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
+    return any(term in tokens or term in lowered for term in FORBIDDEN_FEATURE_TERMS)
 
 
 def _required_features(family: str, lookback: int) -> list[str]:

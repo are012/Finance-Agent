@@ -46,8 +46,9 @@ def critique_experiment(
         and backtest_config.get("execution_timing") not in {None, "next_open", "next_available_open"}
     ):
         flags.append(_flag("high", "SAME_BAR_EXECUTION_RISK", "Close-based signals must execute no earlier than next open."))
-    if config.get("universe", {}).get("survivorship_bias_risk") or validation_outputs.get("survivorship_bias_risk"):
-        flags.append(_flag("medium", "SURVIVORSHIP_BIAS_RISK", "Universe inputs may not represent historical listing availability."))
+    listing_status = validation_outputs.get("schema", {}).get("listing_status", {})
+    if _has_survivorship_risk(config, validation_outputs, listing_status):
+        flags.append(_flag("medium", "SURVIVORSHIP_BIAS_RISK", _survivorship_message(listing_status)))
     costs = config.get("costs", {})
     if config and any(key not in costs for key in ("commission_bps", "sell_tax_bps", "slippage_bps")):
         flags.append(_flag("medium", "MISSING_COST_ASSUMPTION", "Cost assumptions must include commission, sell tax, and slippage."))
@@ -80,6 +81,8 @@ def critique_experiment(
         flags.append(_flag("medium", "COST_SENSITIVITY_FAIL", "Strategy weakens under higher cost assumptions."))
     if validation_outputs.get("parameter_sensitivity", {}).get("passed") is False:
         flags.append(_flag("medium", "PARAMETER_FRAGILITY", "Parameter sensitivity check did not pass."))
+    if validation_outputs.get("walk_forward", {}).get("passed") is False:
+        flags.append(_flag("medium", "WALK_FORWARD_FAIL", "Walk-forward validation did not pass across research windows."))
     concentration = validation_outputs.get("concentration", {})
     if max(
         concentration.get("max_symbol_pnl_share", 0.0),
@@ -111,6 +114,26 @@ def _flag(severity: str, code: str, message: str) -> dict[str, str]:
 def _contains_forbidden_data_term(column: str) -> bool:
     tokens = [token for token in re.split(r"[^a-z0-9]+", column.lower()) if token]
     return any(term in tokens for term in FORBIDDEN_DATA_TERMS)
+
+
+def _has_survivorship_risk(config: dict, validation_outputs: dict, listing_status: dict) -> bool:
+    if config.get("universe", {}).get("survivorship_bias_risk") or validation_outputs.get("survivorship_bias_risk"):
+        return True
+    if listing_status.get("available") is False:
+        return True
+    counts = listing_status.get("counts", {})
+    return any(int(counts.get(status, 0) or 0) > 0 for status in ("delisted", "suspended", "halted"))
+
+
+def _survivorship_message(listing_status: dict) -> str:
+    if listing_status.get("available") is False:
+        return "listing_status is unavailable, so historical listing availability cannot be verified."
+    counts = listing_status.get("counts", {})
+    delisted = int(counts.get("delisted", 0) or 0)
+    suspended = int(counts.get("suspended", 0) or 0) + int(counts.get("halted", 0) or 0)
+    if delisted or suspended:
+        return f"listing_status contains delisted={delisted} and suspended_or_halted={suspended} rows; survivorship handling requires review."
+    return "Universe inputs may not represent historical listing availability."
 
 
 def _summary(status: str, flags: list[dict]) -> str:

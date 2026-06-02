@@ -143,16 +143,49 @@ def backtest_signals(
         for symbol, quantity in list(positions.items()):
             if quantity <= 0 or symbol not in last_bars.index:
                 continue
+            if _is_untradable(last_bars.loc[symbol]):
+                order_rows.append(_rejected_order(last_date, symbol, "sell", 0, "untradable", requested_quantity=quantity))
+                continue
             close_price = float(last_bars.loc[symbol, "close"])
+            requested_quantity = quantity
+            quantity, status, reason = _apply_liquidity_limit(
+                last_bars.loc[symbol],
+                open_price=close_price,
+                requested_quantity=quantity,
+                liquidity_config=liquidity_config,
+            )
+            if status == "rejected":
+                order_rows.append(_rejected_order(last_date, symbol, "sell", 0, reason, requested_quantity=requested_quantity))
+                continue
             estimate = cost_model.estimate("sell", price=close_price, quantity=quantity)
             cash += estimate.cash_delta
-            positions.pop(symbol, None)
-            lot = open_lots.pop(symbol, None)
+            remaining = requested_quantity - quantity
+            if remaining:
+                positions[symbol] = remaining
+            else:
+                positions.pop(symbol, None)
+            lot = open_lots.get(symbol)
             if lot:
                 trade_rows.append(_trade_row(symbol, lot, last_date, estimate, quantity))
-            order_rows.append(_order_row(last_date, symbol, "sell", quantity, estimate, status="filled", reason="final_liquidation"))
+                if remaining:
+                    lot["quantity"] = remaining
+                else:
+                    open_lots.pop(symbol, None)
+            order_rows.append(
+                _order_row(
+                    last_date,
+                    symbol,
+                    "sell",
+                    quantity,
+                    estimate,
+                    status=status,
+                    reason=reason or "final_liquidation",
+                    requested_quantity=requested_quantity,
+                )
+            )
         if equity_rows:
-            equity_rows[-1] = {"date": last_date, "cash": cash, "positions_value": 0.0, "equity": cash}
+            final_equity = _mark_equity(cash, positions, last_bars, price_column="close")
+            equity_rows[-1] = {"date": last_date, "cash": cash, "positions_value": final_equity - cash, "equity": final_equity}
 
     equity_curve = pd.DataFrame(equity_rows)
     orders = pd.DataFrame(order_rows, columns=_order_columns())
@@ -215,14 +248,24 @@ def _mark_equity(cash: float, positions: dict[str, int], daily_bars: pd.DataFram
     return round(value, 10)
 
 
-def _order_row(date: pd.Timestamp, symbol: str, side: str, quantity: int, estimate, *, status: str, reason: str = "") -> dict:
+def _order_row(
+    date: pd.Timestamp,
+    symbol: str,
+    side: str,
+    quantity: int,
+    estimate,
+    *,
+    status: str,
+    reason: str = "",
+    requested_quantity: int | None = None,
+) -> dict:
     return {
         "date": date,
         "symbol": symbol,
         "side": side,
         "status": status,
         "reason": reason,
-        "requested_quantity": quantity,
+        "requested_quantity": quantity if requested_quantity is None else requested_quantity,
         "quantity": quantity,
         "fill_price": estimate.fill_price,
         "gross_value": estimate.gross_value,

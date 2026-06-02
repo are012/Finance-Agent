@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 import pandas as pd
@@ -65,6 +66,7 @@ def evaluate_hypothesis(
         "parameter_sensitivity": _parameter_sensitivity(
             split.validation,
             strategy,
+            validation_metrics,
             initial_cash,
             cost_model,
             max_positions,
@@ -75,7 +77,10 @@ def evaluate_hypothesis(
         ),
         "concentration": concentration_summary(validation_result.trades, validation_result.equity_curve),
         "liquidity": _liquidity_summary(validation_result.orders),
-        "schema": {"inconsistencies": list(getattr(featured, "attrs", {}).get("schema_decisions", []))},
+        "schema": {
+            "inconsistencies": list(getattr(featured, "attrs", {}).get("schema_decisions", [])),
+            "listing_status": getattr(featured, "attrs", {}).get("listing_status_profile", {}),
+        },
         "walk_forward": _walk_forward_validation(
             split=split,
             strategy=strategy,
@@ -299,6 +304,7 @@ def _walk_forward_validation(
 def _parameter_sensitivity(
     data,
     strategy: StrategySpec,
+    base_metrics: dict[str, Any],
     initial_cash: float,
     cost_model: CostModel,
     max_positions: int,
@@ -327,6 +333,7 @@ def _parameter_sensitivity(
                 liquidity_config,
                 force_liquidate_at_end,
                 gates,
+                base_metrics,
                 variant_type="lookback",
                 variant_value=lookback,
             )
@@ -352,16 +359,23 @@ def _parameter_sensitivity(
                     liquidity_config,
                     force_liquidate_at_end,
                     gates,
+                    base_metrics,
                     variant_type=f"threshold:{parameter}",
                     variant_value=parameters[parameter],
                 )
             )
 
     evaluated = [row for row in rows if row["status"] == "evaluated"]
+    pass_rate = sum(1 for row in evaluated if row["passed"]) / len(evaluated) if evaluated else 0.0
     return {
         "base_parameters": strategy.parameters,
+        "base_metrics": base_metrics,
         "variant_count": len(rows),
         "rows": rows,
+        "pass_rate": pass_rate,
+        "worst_case": _worst_case_metrics(evaluated),
+        "median_metrics": _median_metrics(evaluated),
+        "degradation": _max_degradation(evaluated),
         "passed": bool(evaluated) and all(row["passed"] for row in evaluated),
     }
 
@@ -375,6 +389,7 @@ def _evaluate_variant(
     liquidity_config: dict[str, Any],
     force_liquidate_at_end: bool,
     gates: dict[str, Any],
+    base_metrics: dict[str, Any],
     *,
     variant_type: str,
     variant_value: Any,
@@ -390,6 +405,8 @@ def _evaluate_variant(
             "status": "skipped",
             "reason": str(exc),
             "metrics": {},
+            "base_metrics": base_metrics,
+            "degradation": {},
             "trade_count": 0,
             "passed": False,
         }
@@ -402,6 +419,8 @@ def _evaluate_variant(
         "lookback_bars": strategy.lookback_bars,
         "status": "evaluated",
         "metrics": metrics,
+        "base_metrics": base_metrics,
+        "degradation": _metric_degradation(base_metrics, metrics),
         "trade_count": len(result.trades),
         "passed": gates_ok,
         "findings": findings,
@@ -431,6 +450,59 @@ def _threshold_parameters(parameters: dict[str, Any]) -> dict[str, float]:
         lowered = key.lower()
         if any(marker in lowered for marker in ("threshold", "min_", "max_", "_min", "_max", "rsi", "gap")):
             result[key] = float(value)
+    return result
+
+
+_SENSITIVITY_METRICS = (
+    "total_return",
+    "cagr",
+    "sharpe",
+    "calmar",
+    "max_drawdown",
+    "turnover",
+    "trade_count",
+)
+
+
+def _metric_degradation(base_metrics: dict[str, Any], variant_metrics: dict[str, Any]) -> dict[str, float]:
+    degradation = {}
+    for key in _SENSITIVITY_METRICS:
+        if key not in base_metrics or key not in variant_metrics:
+            continue
+        base_value = float(base_metrics.get(key, 0.0) or 0.0)
+        variant_value = float(variant_metrics.get(key, 0.0) or 0.0)
+        if key == "turnover":
+            degradation[key] = max(0.0, variant_value - base_value)
+        else:
+            degradation[key] = max(0.0, base_value - variant_value)
+    return degradation
+
+
+def _median_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    result = {}
+    for key in _SENSITIVITY_METRICS:
+        values = [float(row["metrics"].get(key, 0.0) or 0.0) for row in rows if key in row.get("metrics", {})]
+        if values:
+            result[key] = float(median(values))
+    return result
+
+
+def _worst_case_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    result = {}
+    for key in _SENSITIVITY_METRICS:
+        values = [float(row["metrics"].get(key, 0.0) or 0.0) for row in rows if key in row.get("metrics", {})]
+        if not values:
+            continue
+        result[key] = max(values) if key == "turnover" else min(values)
+    return result
+
+
+def _max_degradation(rows: list[dict[str, Any]]) -> dict[str, float]:
+    result = {}
+    for key in _SENSITIVITY_METRICS:
+        values = [float(row.get("degradation", {}).get(key, 0.0) or 0.0) for row in rows]
+        if values:
+            result[key] = max(values)
     return result
 
 

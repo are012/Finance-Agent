@@ -17,7 +17,7 @@ from research.features import add_chart_features
 from research.hypothesis import generate_hypotheses, load_hypothesis_spec
 from research.ledger import ExperimentLedger
 from research.metrics import compute_metrics
-from research.schema import validate_ohlcv_frame
+from research.schema import apply_universe_filters, validate_ohlcv_frame
 from research.scoring import score_candidate
 from research.validation import SplitConfig, split_by_date, walk_forward_splits
 
@@ -175,6 +175,28 @@ def test_hypothesis_validation_rejects_missing_entry_or_exit_rules(tmp_path):
         load_hypothesis_spec(missing_exit)
 
 
+def test_hypothesis_validation_rejects_forbidden_terms_anywhere_in_spec(tmp_path):
+    path = tmp_path / "forbidden_full_spec.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "id": "H-FORBIDDEN-FULL-SPEC",
+                "idea": "Looks chart-only at the feature list but references forbidden data elsewhere.",
+                "strategy_family": "momentum",
+                "parameters": {"lookback_bars": 20, "holding_bars": 3, "analyst_score_threshold": 0.5},
+                "features": ["momentum_20", "traded_value_ma_20"],
+                "entry_rule": {"expression": "momentum_20 > 0 and analyst_score > 0"},
+                "exit_rule": {"holding_period_days": 3},
+                "notes": ["Do not use news sentiment in chart-only research."],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Forbidden.*analyst_score_threshold"):
+        load_hypothesis_spec(path)
+
+
 def test_research_loop_logs_invalid_hypothesis_and_continues(tmp_path):
     config = yaml.safe_load(Path("configs/example.yaml").read_text(encoding="utf-8"))
     config["hypotheses"] = {"paths": [str(tmp_path / "missing.yaml")], "include_builtin": False}
@@ -233,7 +255,68 @@ def test_research_loop_records_real_walk_forward_and_parameter_sensitivity(tmp_p
     assert parameter_sensitivity["variant_count"] > 0
     assert parameter_sensitivity["rows"]
     assert {"parameters", "metrics", "trade_count", "status"}.issubset(parameter_sensitivity["rows"][0])
+    assert {"pass_rate", "worst_case", "median_metrics", "degradation"}.issubset(parameter_sensitivity)
+    assert {"base_metrics", "degradation"}.issubset(parameter_sensitivity["rows"][0])
+    assert "total_return" in parameter_sensitivity["median_metrics"]
+    assert "total_return" in parameter_sensitivity["worst_case"]
+    assert "total_return" in parameter_sensitivity["degradation"]
     assert "placeholder" not in json.dumps(parameter_sensitivity).lower()
+
+
+def test_walk_forward_failure_penalizes_score_and_sets_critic_flag():
+    metrics = {
+        "cagr": 0.1,
+        "sharpe": 1.0,
+        "calmar": 1.0,
+        "yearly_returns": {"2024": 0.1},
+        "exposure": 0.5,
+        "max_drawdown": -0.05,
+        "turnover": 1.0,
+        "trade_count": 5,
+        "periods": 30,
+    }
+    passed_outputs = {"walk_forward": {"passed": True}, "cost_sensitivity": {"passed": True}, "parameter_sensitivity": {"passed": True}}
+    failed_outputs = {"walk_forward": {"passed": False}, "cost_sensitivity": {"passed": True}, "parameter_sensitivity": {"passed": True}}
+
+    passed_score = score_candidate(metrics, validation_outputs=passed_outputs, gates={"min_trade_count": 1})
+    failed_score = score_candidate(metrics, validation_outputs=failed_outputs, gates={"min_trade_count": 1})
+    critic = critique_experiment(
+        hypothesis_id="H-WF",
+        feature_columns=["momentum_20"],
+        metrics=metrics,
+        trades_count=5,
+        gates={"min_trade_count": 1},
+        validation_outputs=failed_outputs,
+        config={"costs": {"commission_bps": 1.5, "sell_tax_bps": 20, "slippage_bps": 5}},
+    )
+
+    assert failed_score <= passed_score - 10
+    assert "WALK_FORWARD_FAIL" in {flag["code"] for flag in critic["flags"]}
+
+
+def test_listing_status_profile_drives_survivorship_bias_detection():
+    raw = _strict_bars()
+    raw.loc[1, "listing_status"] = "suspended"
+    raw.loc[2, "listing_status"] = "delisted"
+    validated = validate_ohlcv_frame(raw)
+    filtered = apply_universe_filters(validated, {"exclude_suspended": True, "exclude_delisted": False})
+
+    profile = filtered.attrs["listing_status_profile"]
+    critic = critique_experiment(
+        hypothesis_id="H-SURVIVORSHIP",
+        feature_columns=["momentum_20"],
+        metrics={"periods": 30, "max_drawdown": -0.01, "turnover": 1.0, "sharpe": 1.0},
+        trades_count=5,
+        gates={"min_trade_count": 1},
+        validation_outputs={"schema": {"listing_status": profile}},
+        config={"costs": {"commission_bps": 1.5, "sell_tax_bps": 20, "slippage_bps": 5}},
+    )
+
+    assert profile["available"] is True
+    assert profile["counts"]["suspended"] == 1
+    assert profile["counts"]["delisted"] == 1
+    assert profile["filtered_counts"]["suspended"] == 0
+    assert "SURVIVORSHIP_BIAS_RISK" in {flag["code"] for flag in critic["flags"]}
 
 
 def test_structured_critic_covers_remaining_risk_codes():
@@ -473,3 +556,23 @@ def test_cli_end_to_end_uses_external_hypothesis_and_locks_holdout_once(tmp_path
     assert summary["decision"] in {"PASS", "FAIL", "NEEDS_MORE_RESEARCH"}
     assert holdout_files
     assert "reused locked result" in (output_dir / "reports" / "final_report.md").read_text()
+
+
+def test_ci_workflow_and_readme_cover_completion_audit_commands():
+    workflow_path = Path(".github/workflows/ci.yml")
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    readme = Path("README.md").read_text(encoding="utf-8")
+    run_text = "\n".join(
+        str(step.get("run", ""))
+        for job in workflow.get("jobs", {}).values()
+        for step in job.get("steps", [])
+    )
+
+    for command in [
+        "python -m pytest -q",
+        "python -m app.run_research --config configs/example.yaml --output-dir outputs",
+        "python -m app.run_one_hypothesis --config configs/example.yaml --hypothesis configs/hypotheses/momentum_20.yaml --output-dir outputs",
+        "python -m app.final_report --config configs/example.yaml --ledger outputs/ledger/experiments.jsonl --output-dir outputs/reports",
+    ]:
+        assert command in run_text
+        assert command in readme

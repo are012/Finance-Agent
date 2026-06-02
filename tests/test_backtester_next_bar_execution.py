@@ -116,3 +116,45 @@ def test_backtester_can_leave_final_position_open_when_configured():
     assert result.positions.iloc[-1]["quantity"] == 10
     assert result.equity_curve.iloc[-1]["cash"] == 0.0
     assert result.equity_curve.iloc[-1]["positions_value"] == 1250.0
+
+
+def test_final_liquidation_uses_liquidity_rules_before_closing_position():
+    bars = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "symbol": ["AAA"] * 3,
+            "open": [100.0, 110.0, 120.0],
+            "high": [101.0, 116.0, 126.0],
+            "low": [99.0, 109.0, 119.0],
+            "close": [100.0, 115.0, 125.0],
+            "adjusted_close": [100.0, 115.0, 125.0],
+            "volume": [1000, 1000, 1000],
+            "traded_value": [100000.0, 100000.0, 10.0],
+            "market": ["KOSPI"] * 3,
+        }
+    )
+    signals = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "symbol": ["AAA"] * 3,
+            "target_weight": [1.0, 1.0, 1.0],
+        }
+    )
+
+    result = backtest_signals(
+        bars,
+        signals,
+        initial_cash=1100.0,
+        cost_model=CostModel(commission_rate=0.0, tax_rate=0.0, slippage_bps=0.0),
+        liquidity_config={"max_order_pct_of_avg_traded_value": 1.0, "avg_traded_value_lookback": 2, "on_limit": "reject"},
+    )
+
+    final_order = result.orders.iloc[-1]
+    assert final_order["side"] == "sell"
+    assert final_order["status"] == "rejected"
+    assert final_order["reason"] == "liquidity_cap"
+    assert final_order["requested_quantity"] == 10
+    assert result.trades.empty
+    assert result.equity_curve.iloc[-1]["cash"] == 0.0
+    assert result.equity_curve.iloc[-1]["positions_value"] == 1250.0
+    assert result.equity_curve.iloc[-1]["equity"] == 1250.0

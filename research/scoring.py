@@ -9,6 +9,7 @@ def score_candidate(metrics: dict, *, validation_outputs: dict | None = None, ga
     score += 20.0 * _clip(metrics.get("sharpe", 0.0) / 3.0, -1.0, 1.0)
     score += 15.0 * _clip(metrics.get("calmar", 0.0) / 3.0, -1.0, 1.0)
     score += 10.0 * _stability(metrics.get("yearly_returns", {}))
+    score += 10.0 if validation_outputs.get("walk_forward", {}).get("passed", True) else -10.0
     score += 10.0 if validation_outputs.get("cost_sensitivity", {}).get("passed", True) else -10.0
     score += 10.0 if validation_outputs.get("parameter_sensitivity", {}).get("passed", True) else -10.0
     score += 5.0 * _clip(metrics.get("exposure", 0.0), 0.0, 1.0)

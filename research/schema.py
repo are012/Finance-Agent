@@ -50,6 +50,7 @@ def validate_ohlcv_frame(frame: pd.DataFrame, *, allowed_extra_columns: Iterable
     validated["date"] = pd.to_datetime(validated["date"], errors="raise")
     validated["symbol"] = validated["symbol"].astype(str)
     validated["market"] = validated["market"].astype(str)
+    listing_status_available = "listing_status" in validated.columns
     if "listing_status" not in validated.columns:
         validated["listing_status"] = "listed"
         decisions.append("filled missing listing_status with listed")
@@ -70,6 +71,11 @@ def validate_ohlcv_frame(frame: pd.DataFrame, *, allowed_extra_columns: Iterable
 
     validated = validated.sort_values(["symbol", "date"]).reset_index(drop=True)
     validated.attrs["schema_decisions"] = decisions
+    inherited_profile = frame.attrs.get("listing_status_profile") if hasattr(frame, "attrs") else None
+    validated.attrs["listing_status_profile"] = inherited_profile or _listing_status_profile(
+        validated,
+        available=listing_status_available,
+    )
     return validated
 
 
@@ -122,8 +128,13 @@ def apply_universe_filters(frame: pd.DataFrame, config: dict | None = None) -> p
             data = data[~data["security_type"].fillna("").str.lower().str.contains(pattern)].copy()
             decisions.append(f"{option} removed {before - len(data)} rows")
 
+    data = data.sort_values(["symbol", "date"]).reset_index(drop=True)
     data.attrs["schema_decisions"] = decisions
-    return data.sort_values(["symbol", "date"]).reset_index(drop=True)
+    data.attrs["listing_status_profile"] = _with_filtered_listing_status_counts(
+        frame.attrs.get("listing_status_profile", _listing_status_profile(frame, available="listing_status" in frame.columns)),
+        data,
+    )
+    return data
 
 
 def _validate_prices(frame: pd.DataFrame) -> None:
@@ -144,3 +155,32 @@ def _validate_prices(frame: pd.DataFrame) -> None:
 def _validate_non_negative(frame: pd.DataFrame) -> None:
     if (frame[["volume", "traded_value"]] < 0).any().any():
         raise ValueError("Volume and traded_value must be non-negative")
+
+
+def _listing_status_profile(frame: pd.DataFrame, *, available: bool) -> dict:
+    counts = _listing_status_counts(frame)
+    return {
+        "available": bool(available),
+        "row_count": int(len(frame)),
+        "counts": counts,
+        "filtered_counts": counts,
+        "delisted_count": int(counts.get("delisted", 0)),
+        "suspended_count": int(counts.get("suspended", 0)) + int(counts.get("halted", 0)),
+    }
+
+
+def _with_filtered_listing_status_counts(profile: dict, filtered: pd.DataFrame) -> dict:
+    updated = dict(profile)
+    filtered_counts = _listing_status_counts(filtered)
+    updated["filtered_row_count"] = int(len(filtered))
+    updated["filtered_counts"] = filtered_counts
+    return updated
+
+
+def _listing_status_counts(frame: pd.DataFrame) -> dict[str, int]:
+    counts = {"listed": 0, "suspended": 0, "halted": 0, "delisted": 0, "missing": 0}
+    if "listing_status" not in frame.columns:
+        return counts
+    statuses = frame["listing_status"].fillna("missing").astype(str).str.lower()
+    counts.update({str(key): int(value) for key, value in statuses.value_counts().sort_index().items()})
+    return counts

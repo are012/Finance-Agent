@@ -16,6 +16,7 @@ def _write_collection_config(
     processed_format: str | None = None,
     source_extra: dict | None = None,
     output_extra: dict | None = None,
+    filters: dict | None = None,
     status_files: dict | None = None,
 ) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -37,10 +38,7 @@ def _write_collection_config(
     config = {
         "source": source,
         "output": output,
-        "filters": {
-            "markets": ["KOSPI"],
-            "exclude_listing_statuses": [],
-        },
+        "filters": filters if filters is not None else {"markets": ["KOSPI"], "exclude_listing_statuses": []},
         "metadata": {
             "dataset_id": "pytest-krx-sample",
             "notes": "offline fixture only",
@@ -710,6 +708,132 @@ def test_collect_data_writes_data_quality_reports(tmp_path):
     assert report["csv"]["sha256"]
 
 
+def test_collect_data_writes_expanded_symbol_level_data_quality_report(tmp_path):
+    raw_path = tmp_path / "raw_quality.csv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,adjusted_close,volume,traded_value,market,listing_status",
+                "2024-01-01,000001,1000,1100,900,1050,1040,0,0,KOSPI,listed",
+                "2024-01-02,000001,1050,1150,1000,1100,1100,10,11000,KOSPI,listed",
+                "2024-01-01,000002,2000,2100,1900,2050,2050,5,0,KOSDAQ,admin",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_path,
+        filters={"markets": ["KOSPI", "KOSDAQ"], "exclude_listing_statuses": []},
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    payload = json.loads(Path(manifest["data_quality_report"]["json"]["path"]).read_text(encoding="utf-8"))
+    assert payload["date_coverage_summary"] == {
+        "start": "2024-01-01",
+        "end": "2024-01-02",
+        "unique_dates": 2,
+        "row_count": 3,
+    }
+    assert payload["symbol_date_coverage"]["000001"] == {
+        "first_date": "2024-01-01",
+        "last_date": "2024-01-02",
+        "row_count": 2,
+    }
+    assert payload["zero_volume_rows_by_symbol"] == {"000001": 1, "000002": 0}
+    assert payload["zero_traded_value_rows_by_symbol"] == {"000001": 1, "000002": 1}
+    assert payload["market_counts_by_symbol"] == {"000001": {"KOSPI": 2}, "000002": {"KOSDAQ": 1}}
+    assert payload["listing_status_counts_by_symbol"] == {"000001": {"listed": 2}, "000002": {"admin": 1}}
+    assert payload["adjusted_close_divergence_summary"]["total_rows"] == 3
+    assert payload["adjusted_close_divergence_summary"]["divergent_rows"] == 1
+    assert payload["adjusted_close_divergence_summary"]["divergent_symbols"] == 1
+    assert payload["adjusted_close_divergence_summary"]["rows_by_symbol"] == {"000001": 1, "000002": 0}
+    assert payload["daily_universe_size_summary"]["by_date"] == {"2024-01-01": 2, "2024-01-02": 1}
+    assert payload["daily_universe_size_summary"]["min"] == 1
+    assert payload["daily_universe_size_summary"]["max"] == 2
+    quality_rows = pd.read_csv(manifest["data_quality_report"]["csv"]["path"])
+    assert "symbol_date_coverage.000001.first_date" in set(quality_rows["key"])
+    assert "adjusted_close_divergence_summary.rows_by_symbol.000001" in set(quality_rows["key"])
+
+
+def test_collect_data_writes_status_merge_audit_artifacts_when_status_changes(tmp_path):
+    raw_path = tmp_path / "raw.csv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-01,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-02,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-03,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-02,000002,2000,2100,1900,2050,100,205000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    admin_path = tmp_path / "admin.csv"
+    suspended_path = tmp_path / "suspended.csv"
+    delisted_path = tmp_path / "delisted.csv"
+    admin_path.write_text("symbol,date\n000001,2024-01-02\n", encoding="utf-8")
+    suspended_path.write_text("symbol,start_date,end_date\n000001,2024-01-03,2024-01-03\n", encoding="utf-8")
+    delisted_path.write_text("symbol\n000002\n", encoding="utf-8")
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_extra={"research_config_filename": "generated_research.yaml"},
+        status_files={
+            "admin": [str(admin_path)],
+            "suspended": [str(suspended_path)],
+            "delisted": [str(delisted_path)],
+        },
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    for artifact in (
+        manifest["data_quality_report"]["json"],
+        manifest["data_quality_report"]["csv"],
+        manifest["status_merge_audit"]["json"],
+        manifest["status_merge_audit"]["csv"],
+        manifest["research_config_file"],
+    ):
+        assert Path(artifact["path"]).exists()
+        assert artifact["sha256"]
+    audit_json = json.loads(Path(manifest["status_merge_audit"]["json"]["path"]).read_text(encoding="utf-8"))
+    audit_csv = pd.read_csv(manifest["status_merge_audit"]["csv"]["path"], dtype={"symbol": str})
+    assert audit_csv.columns.tolist() == [
+        "status",
+        "source_file",
+        "raw_copy_path",
+        "symbol",
+        "date",
+        "previous_listing_status",
+        "new_listing_status",
+        "match_type",
+    ]
+    assert audit_json == audit_csv.to_dict(orient="records")
+    assert {(row["symbol"], row["date"], row["new_listing_status"], row["match_type"]) for row in audit_json} == {
+        ("000001", "2024-01-02", "admin", "exact_date"),
+        ("000001", "2024-01-03", "suspended", "date_range"),
+        ("000002", "2024-01-02", "delisted", "symbol"),
+    }
+    assert {row["previous_listing_status"] for row in audit_json} == {"listed"}
+
+
 def test_collect_data_optionally_writes_generated_research_config(tmp_path):
     raw_path = Path("data/sample/raw/krx_ohlcv_sample.csv")
     config_path = _write_collection_config(
@@ -734,6 +858,57 @@ def test_collect_data_optionally_writes_generated_research_config(tmp_path):
     assert generated["data"]["date_column"] == "date"
     assert generated["data"]["symbol_column"] == "symbol"
     assert manifest["research_config_file"]["sha256"]
+
+
+def test_generated_research_config_documents_split_guidance_when_sample_is_too_short(tmp_path):
+    raw_path = Path("data/sample/raw/krx_ohlcv_sample.csv")
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_extra={"research_config_filename": "generated_research.yaml"},
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    generated_path = Path(manifest["research_config_file"]["path"])
+    generated = yaml.safe_load(generated_path.read_text(encoding="utf-8"))
+    guidance = generated["generated_data_guidance"]
+    assert guidance["unique_dates"] == 2
+    assert guidance["split_status"] == "insufficient_unique_dates_for_safe_splits"
+    assert "update splits before running full research" in guidance["split_guidance"]
+    assert generated["research"]["allow_final_holdout_during_research"] is False
+
+    research_result = subprocess.run(
+        [sys.executable, "-m", "app.run_research", "--config", str(generated_path), "--output-dir", str(tmp_path / "outputs")],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert research_result.returncode != 0
+    assert "Train, validation, and final_holdout splits must all contain rows" in research_result.stderr
+
+
+def test_readme_documents_real_data_dry_run_workflow():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "## Real-Data Dry Run" in readme
+    assert "prepare local KRX CSV" in readme
+    assert "status_files" in readme
+    assert "app.collect_data" in readme
+    assert "data_quality_report.json" in readme
+    assert "status_merge_audit" in readme
+    assert "generated_research.yaml" in readme
+    assert "app.run_research" in readme
+    assert "app.final_report" in readme
+    assert "final_holdout" in readme
 
 
 def test_optional_remote_sources_are_lazy_and_research_only(monkeypatch):

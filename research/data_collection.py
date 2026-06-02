@@ -89,7 +89,7 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
             raise ValueError("Collection produced zero rows; set zero_row_policy=write_empty to persist an empty manifest")
         raw_frame = _canonical_empty_ohlcv_frame()
     input_files = _input_files(source, raw_dir)
-    raw_frame, status_files = _merge_status_files(raw_frame, config.get("status_files", {}), raw_dir)
+    raw_frame, status_files, status_merge_audit_rows = _merge_status_files(raw_frame, config.get("status_files", {}), raw_dir)
 
     staging_frame = validate_ohlcv_frame(raw_frame)
     staging_frame.to_csv(staging_path, index=False)
@@ -102,11 +102,17 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
         processed_dir=processed_dir,
         output=output,
     )
+    status_merge_audit = _write_status_merge_audit(
+        rows=status_merge_audit_rows,
+        processed_dir=processed_dir,
+        output=output,
+    )
     research_config_file = _write_research_config_if_requested(
         output=output,
         processed_dir=processed_dir,
         processed_path=processed_path,
         processed_format=processed_format,
+        processed_frame=processed_frame,
     )
 
     manifest = _manifest(
@@ -125,6 +131,7 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
         zero_row_policy=zero_row_policy,
         status_precedence=_status_precedence(config.get("status_files", {})),
         data_quality_report=data_quality_report,
+        status_merge_audit=status_merge_audit,
         research_config_file=research_config_file,
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8")
@@ -259,22 +266,36 @@ def _input_files(source: dict[str, Any], raw_dir: Path) -> list[dict[str, Any]]:
     return files
 
 
-def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_dir: Path) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_dir: Path) -> tuple[pd.DataFrame, list[dict[str, Any]], list[dict[str, Any]]]:
     if not status_files:
-        return frame, []
+        return frame, [], []
     data = frame.copy()
     if "listing_status" not in data.columns:
         data["listing_status"] = "listed"
     metadata = []
+    audit_rows: list[dict[str, Any]] = []
     decisions = list(data.attrs.get("schema_decisions", []))
     for status in _status_precedence(status_files):
         for index, path_value in enumerate(_as_path_list(status_files.get(status, []))):
             raw_copy_path = _copy_local_file(path_value, raw_dir, prefix=f"status_{status}_{index:03d}")
             status_frame = _read_status_file(path_value)
             before = data["listing_status"].copy()
-            mask = _status_match_mask(data, status_frame)
+            match_types = _status_match_types(data, status_frame)
+            mask = match_types.ne("")
             data.loc[mask, "listing_status"] = status
-            changed = int((before != data["listing_status"]).sum())
+            changed_mask = mask & before.ne(data["listing_status"])
+            changed = int(changed_mask.sum())
+            audit_rows.extend(
+                _status_merge_audit_rows(
+                    data=data,
+                    before=before,
+                    changed_mask=changed_mask,
+                    match_types=match_types,
+                    status=status,
+                    source_file=path_value,
+                    raw_copy_path=raw_copy_path,
+                )
+            )
             metadata.append(
                 {
                     "status": status,
@@ -288,7 +309,7 @@ def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_d
             )
             decisions.append(f"merged {int(mask.sum())} {status} status-file matches from {path_value}; changed {changed} rows")
     data.attrs["schema_decisions"] = decisions
-    return data, metadata
+    return data, metadata, audit_rows
 
 
 def _status_precedence(status_files: dict[str, Any]) -> list[str]:
@@ -345,29 +366,73 @@ def _parse_status_date_column(series: pd.Series, *, column: str, source_path: Pa
 
 
 def _status_match_mask(data: pd.DataFrame, status_frame: pd.DataFrame) -> pd.Series:
+    return _status_match_types(data, status_frame).ne("")
+
+
+def _status_match_types(data: pd.DataFrame, status_frame: pd.DataFrame) -> pd.Series:
+    match_types = pd.Series("", index=data.index, dtype=object)
     if status_frame.empty:
-        return pd.Series(False, index=data.index)
-    if "date" not in status_frame.columns:
-        row_dates = pd.to_datetime(data["date"], errors="raise")
-        symbol_values = data["symbol"].astype(str)
-        mask = pd.Series(False, index=data.index)
-        has_range = "start_date" in status_frame.columns or "end_date" in status_frame.columns
-        if not has_range:
-            return symbol_values.isin(set(status_frame["symbol"]))
+        return match_types
+    row_dates = pd.to_datetime(data["date"], errors="raise")
+    symbol_values = data["symbol"].astype(str)
+    if "date" in status_frame.columns:
+        row_date_values = row_dates.dt.strftime("%Y-%m-%d")
+        for _, row in status_frame.iterrows():
+            status_date = row.get("date")
+            if pd.isna(status_date):
+                continue
+            row_mask = symbol_values.eq(str(row["symbol"])) & row_date_values.eq(str(status_date))
+            match_types.loc[row_mask] = "exact_date"
+        return match_types
+    has_range = "start_date" in status_frame.columns or "end_date" in status_frame.columns
+    if has_range:
         for _, row in status_frame.iterrows():
             row_mask = symbol_values.eq(str(row["symbol"]))
             start_date = row.get("start_date")
             end_date = row.get("end_date")
+            match_type = "date_range" if pd.notna(start_date) or pd.notna(end_date) else "symbol"
             if pd.notna(start_date):
                 row_mask &= row_dates >= pd.Timestamp(start_date)
             if pd.notna(end_date):
                 row_mask &= row_dates <= pd.Timestamp(end_date)
-            mask |= row_mask
-        return mask
-    row_dates = pd.to_datetime(data["date"], errors="raise").dt.strftime("%Y-%m-%d")
-    row_keys = pd.Series(list(zip(row_dates, data["symbol"].astype(str))), index=data.index)
-    status_keys = set(zip(status_frame["date"], status_frame["symbol"]))
-    return row_keys.isin(status_keys)
+            match_types.loc[row_mask] = match_type
+        return match_types
+    match_types.loc[symbol_values.isin(set(status_frame["symbol"]))] = "symbol"
+    return match_types
+
+
+def _status_merge_audit_rows(
+    *,
+    data: pd.DataFrame,
+    before: pd.Series,
+    changed_mask: pd.Series,
+    match_types: pd.Series,
+    status: str,
+    source_file: str | Path,
+    raw_copy_path: Path,
+) -> list[dict[str, Any]]:
+    if not changed_mask.any():
+        return []
+    changed = data.loc[changed_mask, ["date", "symbol", "listing_status"]].copy()
+    changed["date"] = pd.to_datetime(changed["date"], errors="raise").dt.strftime("%Y-%m-%d")
+    changed["previous_listing_status"] = before.loc[changed_mask].astype(str)
+    changed["match_type"] = match_types.loc[changed_mask].astype(str)
+    changed = changed.sort_values(["symbol", "date"]).reset_index(drop=True)
+    rows = []
+    for _, row in changed.iterrows():
+        rows.append(
+            {
+                "status": status,
+                "source_file": str(source_file),
+                "raw_copy_path": str(raw_copy_path),
+                "symbol": str(row["symbol"]),
+                "date": str(row["date"]),
+                "previous_listing_status": str(row["previous_listing_status"]),
+                "new_listing_status": str(row["listing_status"]),
+                "match_type": str(row["match_type"]),
+            }
+        )
+    return rows
 
 
 def _filter_config(filters: dict[str, Any]) -> dict[str, Any]:
@@ -402,7 +467,13 @@ def _validate_output_path_collisions(output: dict[str, Any]) -> None:
         "staging": staging_dir / output.get("staging_filename", "staging_ohlcv.csv"),
         "processed": processed_dir / str(output.get("processed_filename", "collected_ohlcv.csv")),
         "manifest": processed_dir / output.get("manifest_filename", "manifest.json"),
+        "data_quality_report_json": processed_dir / output.get("data_quality_report_json_filename", "data_quality_report.json"),
+        "data_quality_report_csv": processed_dir / output.get("data_quality_report_csv_filename", "data_quality_report.csv"),
+        "status_merge_audit_json": processed_dir / output.get("status_merge_audit_json_filename", "status_merge_audit.json"),
+        "status_merge_audit_csv": processed_dir / output.get("status_merge_audit_csv_filename", "status_merge_audit.csv"),
     }
+    if output.get("research_config_filename"):
+        paths["research_config"] = processed_dir / output["research_config_filename"]
     resolved: dict[Path, str] = {}
     for label, path in paths.items():
         resolved_path = path.resolve(strict=False)
@@ -439,6 +510,31 @@ def _write_data_quality_report(
     }
 
 
+def _write_status_merge_audit(*, rows: list[dict[str, Any]], processed_dir: Path, output: dict[str, Any]) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    json_path = processed_dir / output.get("status_merge_audit_json_filename", "status_merge_audit.json")
+    csv_path = processed_dir / output.get("status_merge_audit_csv_filename", "status_merge_audit.csv")
+    json_path.write_text(json.dumps(rows, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    pd.DataFrame(
+        rows,
+        columns=[
+            "status",
+            "source_file",
+            "raw_copy_path",
+            "symbol",
+            "date",
+            "previous_listing_status",
+            "new_listing_status",
+            "match_type",
+        ],
+    ).to_csv(csv_path, index=False)
+    return {
+        "json": {"path": str(json_path), "sha256": file_hash(json_path)},
+        "csv": {"path": str(csv_path), "sha256": file_hash(csv_path)},
+    }
+
+
 def _data_quality_payload(*, raw_frame: pd.DataFrame, processed_frame: pd.DataFrame) -> dict[str, Any]:
     processed = processed_frame.copy()
     if processed.empty:
@@ -446,6 +542,13 @@ def _data_quality_payload(*, raw_frame: pd.DataFrame, processed_frame: pd.DataFr
         date_coverage = {"start": None, "end": None, "unique_dates": 0, "row_count": 0}
         listing_status_counts: dict[str, int] = {}
         market_counts: dict[str, int] = {}
+        symbol_date_coverage: dict[str, dict[str, Any]] = {}
+        zero_volume_rows_by_symbol: dict[str, int] = {}
+        zero_traded_value_rows_by_symbol: dict[str, int] = {}
+        market_counts_by_symbol: dict[str, dict[str, int]] = {}
+        listing_status_counts_by_symbol: dict[str, dict[str, int]] = {}
+        adjusted_close_divergence_summary = _adjusted_close_divergence_summary(processed)
+        daily_universe_size_summary = _daily_universe_size_summary(processed)
     else:
         dates = pd.to_datetime(processed["date"], errors="raise")
         row_counts_by_symbol = {str(key): int(value) for key, value in processed["symbol"].astype(str).value_counts().sort_index().items()}
@@ -459,9 +562,24 @@ def _data_quality_payload(*, raw_frame: pd.DataFrame, processed_frame: pd.DataFr
             str(key): int(value) for key, value in processed["listing_status"].fillna("missing").astype(str).value_counts().sort_index().items()
         }
         market_counts = {str(key): int(value) for key, value in processed["market"].astype(str).value_counts().sort_index().items()}
+        symbol_date_coverage = _symbol_date_coverage(processed)
+        zero_volume_rows_by_symbol = _zero_rows_by_symbol(processed, "volume")
+        zero_traded_value_rows_by_symbol = _zero_rows_by_symbol(processed, "traded_value")
+        market_counts_by_symbol = _nested_counts_by_symbol(processed, "market")
+        listing_status_counts_by_symbol = _nested_counts_by_symbol(processed, "listing_status")
+        adjusted_close_divergence_summary = _adjusted_close_divergence_summary(processed)
+        daily_universe_size_summary = _daily_universe_size_summary(processed)
     return {
         "row_counts_by_symbol": row_counts_by_symbol,
         "date_coverage": date_coverage,
+        "date_coverage_summary": date_coverage,
+        "symbol_date_coverage": symbol_date_coverage,
+        "zero_volume_rows_by_symbol": zero_volume_rows_by_symbol,
+        "zero_traded_value_rows_by_symbol": zero_traded_value_rows_by_symbol,
+        "market_counts_by_symbol": market_counts_by_symbol,
+        "listing_status_counts_by_symbol": listing_status_counts_by_symbol,
+        "adjusted_close_divergence_summary": adjusted_close_divergence_summary,
+        "daily_universe_size_summary": daily_universe_size_summary,
         "missing_required_columns": sorted(REQUIRED_COLUMNS - set(raw_frame.columns)),
         "ohlc_anomaly_counts": _ohlc_anomaly_counts(raw_frame),
         "listing_status_counts": listing_status_counts,
@@ -473,12 +591,96 @@ def _data_quality_payload(*, raw_frame: pd.DataFrame, processed_frame: pd.DataFr
 def _data_quality_rows(payload: dict[str, Any]) -> pd.DataFrame:
     rows = []
     for section, values in payload.items():
-        if isinstance(values, dict):
-            for key, value in values.items():
-                rows.append({"section": section, "key": key, "value": value})
-        else:
-            rows.append({"section": section, "key": "value", "value": values})
+        rows.extend(_flatten_quality_rows(section, values))
     return pd.DataFrame(rows, columns=["section", "key", "value"])
+
+
+def _flatten_quality_rows(section: str, value: Any, prefix: str | None = None) -> list[dict[str, Any]]:
+    key = prefix or section
+    if isinstance(value, dict):
+        rows: list[dict[str, Any]] = []
+        if not value:
+            rows.append({"section": section, "key": key, "value": "{}"})
+        for child_key, child_value in value.items():
+            child_path = f"{key}.{child_key}"
+            rows.extend(_flatten_quality_rows(section, child_value, child_path))
+        return rows
+    if isinstance(value, list):
+        serialized = json.dumps(value, sort_keys=True, default=str)
+    else:
+        serialized = value
+    return [{"section": section, "key": key, "value": serialized}]
+
+
+def _symbol_date_coverage(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"], errors="raise")
+    coverage = {}
+    for symbol, group in data.groupby(data["symbol"].astype(str), sort=True):
+        coverage[str(symbol)] = {
+            "first_date": group["date"].min().strftime("%Y-%m-%d"),
+            "last_date": group["date"].max().strftime("%Y-%m-%d"),
+            "row_count": int(len(group)),
+        }
+    return coverage
+
+
+def _zero_rows_by_symbol(frame: pd.DataFrame, column: str) -> dict[str, int]:
+    if column not in frame.columns:
+        return {}
+    data = frame.copy()
+    data[column] = pd.to_numeric(data[column], errors="coerce")
+    return {str(symbol): int((group[column] == 0).sum()) for symbol, group in data.groupby(data["symbol"].astype(str), sort=True)}
+
+
+def _nested_counts_by_symbol(frame: pd.DataFrame, column: str) -> dict[str, dict[str, int]]:
+    if column not in frame.columns:
+        return {}
+    result = {}
+    for symbol, group in frame.groupby(frame["symbol"].astype(str), sort=True):
+        counts = group[column].fillna("missing").astype(str).value_counts().sort_index()
+        result[str(symbol)] = {str(key): int(value) for key, value in counts.items()}
+    return result
+
+
+def _adjusted_close_divergence_summary(frame: pd.DataFrame) -> dict[str, Any]:
+    summary = {
+        "total_rows": int(len(frame)),
+        "divergent_rows": 0,
+        "divergent_symbols": 0,
+        "rows_by_symbol": {},
+        "max_abs_diff_by_symbol": {},
+    }
+    if frame.empty or not {"close", "adjusted_close", "symbol"}.issubset(frame.columns):
+        return summary
+    close = pd.to_numeric(frame["close"], errors="coerce")
+    adjusted_close = pd.to_numeric(frame["adjusted_close"], errors="coerce")
+    abs_diff = (adjusted_close - close).abs()
+    divergent = abs_diff > 1e-9
+    summary["divergent_rows"] = int(divergent.sum())
+    summary["divergent_symbols"] = int(frame.loc[divergent, "symbol"].astype(str).nunique())
+    by_symbol: dict[str, int] = {}
+    max_diff_by_symbol: dict[str, float] = {}
+    for symbol, group in frame.assign(_divergent=divergent, _abs_diff=abs_diff).groupby(frame["symbol"].astype(str), sort=True):
+        by_symbol[str(symbol)] = int(group["_divergent"].sum())
+        max_diff_by_symbol[str(symbol)] = float(group["_abs_diff"].max()) if group["_abs_diff"].notna().any() else 0.0
+    summary["rows_by_symbol"] = by_symbol
+    summary["max_abs_diff_by_symbol"] = max_diff_by_symbol
+    return summary
+
+
+def _daily_universe_size_summary(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty or not {"date", "symbol"}.issubset(frame.columns):
+        return {"min": 0, "max": 0, "mean": 0.0, "by_date": {}}
+    dates = pd.to_datetime(frame["date"], errors="raise").dt.strftime("%Y-%m-%d")
+    by_date_series = frame.assign(_date=dates).groupby("_date")["symbol"].nunique().sort_index()
+    by_date = {str(key): int(value) for key, value in by_date_series.items()}
+    return {
+        "min": int(by_date_series.min()),
+        "max": int(by_date_series.max()),
+        "mean": float(by_date_series.mean()),
+        "by_date": by_date,
+    }
 
 
 def _ohlc_anomaly_counts(frame: pd.DataFrame) -> dict[str, int]:
@@ -517,7 +719,14 @@ def _duplicate_removal_summary(frame: pd.DataFrame) -> dict[str, int]:
     }
 
 
-def _write_research_config_if_requested(*, output: dict[str, Any], processed_dir: Path, processed_path: Path, processed_format: str) -> dict[str, Any] | None:
+def _write_research_config_if_requested(
+    *,
+    output: dict[str, Any],
+    processed_dir: Path,
+    processed_path: Path,
+    processed_format: str,
+    processed_frame: pd.DataFrame,
+) -> dict[str, Any] | None:
     filename = output.get("research_config_filename")
     if not filename:
         return None
@@ -535,8 +744,62 @@ def _write_research_config_if_requested(*, output: dict[str, Any], processed_dir
         "date_column": "date",
         "symbol_column": "symbol",
     }
+    research = dict(payload.get("research") or {})
+    research["allow_final_holdout_during_research"] = False
+    payload["research"] = research
+    guidance = _generated_research_config_guidance(processed_frame)
+    payload["generated_data_guidance"] = guidance
+    if guidance["split_status"] == "auto_adjusted_splits":
+        payload["splits"] = guidance["splits"]
     path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return {"path": str(path), "sha256": file_hash(path)}
+
+
+def _generated_research_config_guidance(processed_frame: pd.DataFrame) -> dict[str, Any]:
+    coverage = _data_quality_payload(raw_frame=processed_frame, processed_frame=processed_frame)["date_coverage_summary"]
+    if processed_frame.empty:
+        unique_dates: list[pd.Timestamp] = []
+    else:
+        unique_dates = sorted(pd.to_datetime(processed_frame["date"], errors="raise").drop_duplicates())
+    if len(unique_dates) < 3:
+        return {
+            "date_coverage": coverage,
+            "unique_dates": int(len(unique_dates)),
+            "split_status": "insufficient_unique_dates_for_safe_splits",
+            "split_guidance": (
+                "Processed data has fewer than 3 unique dates, so train, validation, and final_holdout "
+                "cannot all be non-empty. You must update splits before running full research; final_holdout remains "
+                "reserved for app.final_report and must not be used during research."
+            ),
+        }
+    splits = _safe_generated_splits(unique_dates)
+    return {
+        "date_coverage": coverage,
+        "unique_dates": int(len(unique_dates)),
+        "split_status": "auto_adjusted_splits",
+        "split_guidance": (
+            "Generated splits were adjusted to the processed data date coverage. Research commands use train "
+            "and validation only; final_holdout remains reserved for app.final_report."
+        ),
+        "splits": splits,
+    }
+
+
+def _safe_generated_splits(unique_dates: list[pd.Timestamp]) -> dict[str, str]:
+    last_index = len(unique_dates) - 1
+    train_end_index = max(0, len(unique_dates) // 3 - 1)
+    validation_start_index = train_end_index + 1
+    validation_end_index = max(validation_start_index, (2 * len(unique_dates)) // 3 - 1)
+    validation_end_index = min(validation_end_index, last_index - 1)
+    final_holdout_start_index = validation_end_index + 1
+    return {
+        "train_start": unique_dates[0].strftime("%Y-%m-%d"),
+        "train_end": unique_dates[train_end_index].strftime("%Y-%m-%d"),
+        "validation_start": unique_dates[validation_start_index].strftime("%Y-%m-%d"),
+        "validation_end": unique_dates[validation_end_index].strftime("%Y-%m-%d"),
+        "final_holdout_start": unique_dates[final_holdout_start_index].strftime("%Y-%m-%d"),
+        "final_holdout_end": unique_dates[last_index].strftime("%Y-%m-%d"),
+    }
 
 
 def _retry_config(source: dict[str, Any]) -> dict[str, Any]:
@@ -623,6 +886,7 @@ def _manifest(
     zero_row_policy: str,
     status_precedence: list[str],
     data_quality_report: dict[str, Any],
+    status_merge_audit: dict[str, Any] | None,
     research_config_file: dict[str, Any] | None,
 ) -> dict[str, Any]:
     filters = config.get("filters", {})
@@ -644,6 +908,7 @@ def _manifest(
         "staging_file": {"path": str(staging_path), "format": "csv", "sha256": file_hash(staging_path)},
         "processed_file": {"path": str(processed_path), "format": processed_format, "sha256": file_hash(processed_path)},
         "data_quality_report": data_quality_report,
+        "status_merge_audit": status_merge_audit,
         "research_config_file": research_config_file,
         "allowed_columns": sorted(ALLOWED_COLUMNS),
         "forbidden_data": FORBIDDEN_DATA,

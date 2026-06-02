@@ -18,6 +18,7 @@ output:
   staging_filename: staging_ohlcv.csv
   processed_filename: collected_ohlcv.csv
   manifest_filename: manifest.json
+  research_config_filename: generated_research.yaml
 
 filters:
   markets: ["KOSPI", "KOSDAQ"]

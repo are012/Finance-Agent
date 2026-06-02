@@ -46,7 +46,7 @@ Use the collection CLI to normalize local KRX CSV exports into the canonical OHL
 .venv/bin/python -m app.collect_data --config configs/data_collection.yaml
 ```
 
-The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, listing-status counts, and data-quality report paths.
+The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, listing-status counts, data-quality report paths, status-merge audit paths when status files change rows, and the generated research config path when configured.
 
 Optional `status_files` can merge separate local CSV or Parquet files for suspended, delisted, and admin-issue symbols into `listing_status`. Status files require `symbol` and may include `date` or `start_date`/`end_date`; dated rows update only matching `date`/`symbol` observations, ranged rows update observations inside the effective range, and symbol-only rows update every observation for that symbol. Status files are copied into `raw_dir` and recorded in the manifest with hashes.
 
@@ -56,7 +56,31 @@ The preferred reproducible source is `krx_csv`, because it works fully offline. 
 
 For optional `pykrx` and `fdr` convenience sources, configure `source.retry.attempts`, `source.retry.backoff_seconds`, and `source.rate_limit.sleep_seconds`. The manifest records requested, successful, empty, and failed symbols so partial remote collection does not hide missing data. Remote sources default to `zero_row_policy: write_empty`, which is useful for audit runs and fixtures because it writes canonical empty OHLCV outputs and a manifest when every requested symbol is empty or failed. Use `zero_row_policy: error` for production refresh jobs so a zero-row collection fails fast. The manifest also records provider metadata, adjusted-close policy notes, and FDR traded-value estimation warnings.
 
-Each collection writes JSON and CSV data-quality reports with row counts by symbol, date coverage, missing required columns, OHLC anomaly counts, listing-status counts, market counts, and duplicate-removal summary. Set `output.research_config_filename` to emit a generated research config whose `data.path` points at the processed output.
+Each collection writes JSON and CSV data-quality reports with symbol-level first/last dates, row counts by symbol, zero-volume and zero-traded-value counts, market/listing-status counts by symbol, adjusted-close divergence, daily universe size, date coverage, missing required columns, OHLC anomaly counts, and duplicate-removal summary. Set `output.research_config_filename` to emit a generated research config whose `data.path` points at the processed output. If the processed file is too short to create non-empty train, validation, and final-holdout splits, the generated config records split guidance instead of silently producing a runnable research setup.
+
+## Real-Data Dry Run
+
+1. To prepare local KRX CSV files, keep only chart/local metadata columns: `date`, `symbol`, `open`, `high`, `low`, `close`, optional `adjusted_close`, `volume`, `traded_value`, `market`, optional `listing_status`, optional `name`, and optional `security_type`.
+2. Configure `configs/data_collection.yaml` with your local `source.input_paths`. Add local `status_files` for suspended, delisted, or admin symbols when available; do not add fundamentals, news, disclosures, analyst, macro, investor-flow, broker, account, or live-trading data.
+3. Run collection:
+
+```bash
+.venv/bin/python -m app.collect_data --config configs/data_collection.yaml
+```
+
+4. Inspect generated artifacts before research:
+   - `data/processed/manifest.json`
+   - `data/processed/data_quality_report.json`
+   - `data/processed/data_quality_report.csv`
+   - `data/processed/status_merge_audit.json` and `.csv` when status files changed `listing_status`
+   - `data/processed/generated_research.yaml` when `output.research_config_filename` is configured
+5. If `generated_research.yaml` reports that the processed sample is too short, update its `splits` for your real dataset before running full research. Keep `research.allow_final_holdout_during_research: false`; final_holdout is reserved for `app.final_report`.
+6. Run research and reporting:
+
+```bash
+.venv/bin/python -m app.run_research --config data/processed/generated_research.yaml --output-dir outputs
+.venv/bin/python -m app.final_report --config data/processed/generated_research.yaml --ledger outputs/ledger/experiments.jsonl --output-dir outputs/reports
+```
 
 The processed CSV can be used by setting `configs/example.yaml`:
 

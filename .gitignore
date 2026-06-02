@@ -9,3 +9,6 @@ outputs/artifacts/*.csv
 outputs/reports/*.json
 outputs/reports/*.md
 outputs/reports/*.csv
+data/raw/*
+data/staging/*
+data/processed/*

@@ -20,6 +20,8 @@ Allowed local input columns:
 - `market`
 - `listing_status`, optional
 
+The collection pipeline may also preserve `name` and `security_type` as local metadata for filtering and traceability. These are not chart-derived signal features.
+
 Forbidden data includes fundamentals, financial statements, news, disclosures, macro data, analyst data, investor-flow data, future returns in signal generation, and any feature unavailable at the decision timestamp.
 
 ## Korean OHLCV Input
@@ -35,6 +37,28 @@ data:
 ```
 
 The loader validates required columns, rejects impossible OHLC rows, deduplicates duplicate `date`/`symbol` rows deterministically, and applies configured universe filters such as market, listing status, low price, and traded-value filters.
+
+## Offline Data Collection
+
+Use the collection CLI to normalize local KRX CSV exports into the canonical OHLCV schema:
+
+```bash
+.venv/bin/python -m app.collect_data --config configs/data_collection.yaml
+```
+
+The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, and listing-status counts.
+
+The preferred reproducible source is `krx_csv`, because it works fully offline. Optional `pykrx` and `fdr` source modules are available for research convenience through lazy imports, but tests and CI do not require internet access or those packages.
+
+The processed CSV can be used by setting `configs/example.yaml`:
+
+```yaml
+data:
+  path: data/processed/collected_ohlcv.csv
+  format: csv
+  date_column: date
+  symbol_column: symbol
+```
 
 ## Setup
 

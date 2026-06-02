@@ -31,7 +31,7 @@ def validate_config(config: dict[str, Any]) -> None:
 
 def load_ohlcv(path: str | Path, *, file_format: str = "csv") -> pd.DataFrame:
     if file_format == "csv":
-        frame = pd.read_csv(path)
+        frame = pd.read_csv(path, dtype={"symbol": str})
     elif file_format == "parquet":
         frame = pd.read_parquet(path)
     else:

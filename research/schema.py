@@ -100,6 +100,12 @@ def apply_universe_filters(frame: pd.DataFrame, config: dict | None = None) -> p
         data = data[~data["listing_status"].fillna("listed").str.lower().eq("delisted")].copy()
         decisions.append(f"excluded delisted rows: {before - len(data)}")
 
+    excluded_statuses = {str(status).lower() for status in config.get("exclude_listing_statuses", []) or []}
+    if excluded_statuses:
+        before = len(data)
+        data = data[~data["listing_status"].fillna("listed").str.lower().isin(excluded_statuses)].copy()
+        decisions.append(f"excluded listing statuses {sorted(excluded_statuses)}: {before - len(data)}")
+
     low_price = config.get("exclude_low_price_below")
     if low_price is not None:
         before = len(data)
@@ -166,6 +172,7 @@ def _listing_status_profile(frame: pd.DataFrame, *, available: bool) -> dict:
         "filtered_counts": counts,
         "delisted_count": int(counts.get("delisted", 0)),
         "suspended_count": int(counts.get("suspended", 0)) + int(counts.get("halted", 0)),
+        "admin_count": int(counts.get("admin", 0)),
     }
 
 
@@ -178,7 +185,7 @@ def _with_filtered_listing_status_counts(profile: dict, filtered: pd.DataFrame) 
 
 
 def _listing_status_counts(frame: pd.DataFrame) -> dict[str, int]:
-    counts = {"listed": 0, "suspended": 0, "halted": 0, "delisted": 0, "missing": 0}
+    counts = {"listed": 0, "suspended": 0, "halted": 0, "delisted": 0, "admin": 0, "missing": 0}
     if "listing_status" not in frame.columns:
         return counts
     statuses = frame["listing_status"].fillna("missing").astype(str).str.lower()

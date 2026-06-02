@@ -1,0 +1,20 @@
+source:
+  type: krx_csv
+  input_paths:
+    - data/sample/raw/krx_ohlcv_sample.csv
+
+output:
+  raw_dir: data/raw
+  staging_dir: data/staging
+  processed_dir: data/processed
+  staging_filename: staging_ohlcv.csv
+  processed_filename: collected_ohlcv.csv
+  manifest_filename: manifest.json
+
+filters:
+  markets: ["KOSPI", "KOSDAQ"]
+  exclude_listing_statuses: []
+
+metadata:
+  dataset_id: sample-local-krx-ohlcv
+  notes: "Offline sample raw KRX CSV ingestion; replace input_paths with local KRX exports for research."

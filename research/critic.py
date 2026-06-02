@@ -122,7 +122,7 @@ def _has_survivorship_risk(config: dict, validation_outputs: dict, listing_statu
     if listing_status.get("available") is False:
         return True
     counts = listing_status.get("counts", {})
-    return any(int(counts.get(status, 0) or 0) > 0 for status in ("delisted", "suspended", "halted"))
+    return any(int(counts.get(status, 0) or 0) > 0 for status in ("delisted", "suspended", "halted", "admin"))
 
 
 def _survivorship_message(listing_status: dict) -> str:
@@ -131,8 +131,9 @@ def _survivorship_message(listing_status: dict) -> str:
     counts = listing_status.get("counts", {})
     delisted = int(counts.get("delisted", 0) or 0)
     suspended = int(counts.get("suspended", 0) or 0) + int(counts.get("halted", 0) or 0)
-    if delisted or suspended:
-        return f"listing_status contains delisted={delisted} and suspended_or_halted={suspended} rows; survivorship handling requires review."
+    admin = int(counts.get("admin", 0) or 0)
+    if delisted or suspended or admin:
+        return f"listing_status contains delisted={delisted}, suspended_or_halted={suspended}, and admin={admin} rows; survivorship handling requires review."
     return "Universe inputs may not represent historical listing availability."
 
 

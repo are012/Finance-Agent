@@ -18,6 +18,10 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+data = [
+  "pykrx>=1.0",
+  "finance-datareader>=0.9",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

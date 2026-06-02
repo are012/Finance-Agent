@@ -24,6 +24,9 @@ jobs:
       - name: Run pytest
         run: python -m pytest -q
 
+      - name: Run offline data collection
+        run: python -m app.collect_data --config configs/data_collection.yaml
+
       - name: Run completion audit commands
         run: |
           rm -rf outputs/ledger outputs/artifacts outputs/reports

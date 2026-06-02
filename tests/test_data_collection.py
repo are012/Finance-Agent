@@ -176,6 +176,54 @@ def test_collect_data_merges_separate_local_status_files(tmp_path):
     assert all(entry["sha256"] for entry in manifest["status_files"])
     assert all(entry["matched_rows"] == 1 for entry in manifest["status_files"])
     assert all(entry["changed_rows"] == 1 for entry in manifest["status_files"])
+    assert all(entry["raw_copy_path"] for entry in manifest["status_files"])
+
+
+def test_collect_data_merges_status_files_with_effective_date_ranges(tmp_path):
+    raw_path = tmp_path / "raw.csv"
+    raw_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume,traded_value,market",
+                "2024-01-01,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-02,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-03,000001,1000,1100,900,1050,100,105000,KOSPI",
+                "2024-01-04,000001,1000,1100,900,1050,100,105000,KOSPI",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    admin_path = tmp_path / "admin_range.csv"
+    admin_path.write_text("symbol,start_date,end_date\n000001,2024-01-02,2024-01-03\n", encoding="utf-8")
+    config_path = _write_collection_config(
+        tmp_path,
+        raw_path=raw_path,
+        status_files={"admin": [str(admin_path)]},
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.collect_data", "--config", str(config_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    processed = pd.read_csv(tmp_path / "processed" / "collected_ohlcv.csv", dtype={"symbol": str})
+    assert processed["listing_status"].tolist() == ["listed", "admin", "admin", "listed"]
+    manifest = json.loads((tmp_path / "processed" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status_files"] == [
+        {
+            "status": "admin",
+            "path": str(admin_path),
+            "raw_copy_path": str(tmp_path / "raw" / "admin_range.csv"),
+            "sha256": manifest["status_files"][0]["sha256"],
+            "rows": 1,
+            "matched_rows": 2,
+            "changed_rows": 2,
+        }
+    ]
+    assert (tmp_path / "raw" / "admin_range.csv").exists()
 
 
 def test_collect_data_writes_parquet_processed_output(tmp_path):
@@ -212,6 +260,15 @@ def test_collect_data_writes_parquet_processed_output(tmp_path):
         (lambda config: config["source"].update({"type": "pykrx", "symbols": [], "start": "2024-01-01", "end": "2024-01-02"}), "source.symbols"),
         (lambda config: config["source"].update({"retry": {"attempts": 0}}), "retry.attempts"),
         (lambda config: config["source"].update({"rate_limit": {"sleep_seconds": -1}}), "rate_limit.sleep_seconds"),
+        (lambda config: config.update({"zero_row_policy": "bad"}), "zero_row_policy"),
+        (
+            lambda config: config["output"].update({"staging_filename": "same.csv", "processed_filename": "same.csv", "processed_dir": config["output"]["staging_dir"]}),
+            "Output paths must not collide",
+        ),
+        (
+            lambda config: config["output"].update({"processed_filename": "manifest.json"}),
+            "Output paths must not collide",
+        ),
     ],
 )
 def test_collection_config_validation_errors(tmp_path, mutate, message):
@@ -225,6 +282,112 @@ def test_collection_config_validation_errors(tmp_path, mutate, message):
 
     with pytest.raises(ValueError, match=message):
         load_collection_config(config_path)
+
+
+def test_remote_all_empty_or_failed_writes_empty_outputs_and_manifest(tmp_path, monkeypatch):
+    import research.data_collection as data_collection
+
+    columns = [
+        "date",
+        "symbol",
+        "open",
+        "high",
+        "low",
+        "close",
+        "adjusted_close",
+        "volume",
+        "traded_value",
+        "market",
+        "listing_status",
+    ]
+
+    def fake_collect_pykrx_ohlcv(*, symbols, start, end, market="KRX"):
+        symbol = list(symbols)[0]
+        if symbol == "000001":
+            return pd.DataFrame(columns=columns)
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(data_collection, "collect_pykrx_ohlcv", fake_collect_pykrx_ohlcv)
+    config = {
+        "source": {
+            "type": "pykrx",
+            "symbols": ["000001", "000002"],
+            "start": "2024-01-01",
+            "end": "2024-01-02",
+            "market": "KOSPI",
+            "retry": {"attempts": 1, "backoff_seconds": 0},
+            "rate_limit": {"sleep_seconds": 0},
+        },
+        "output": {
+            "raw_dir": str(tmp_path / "raw"),
+            "staging_dir": str(tmp_path / "staging"),
+            "processed_dir": str(tmp_path / "processed"),
+            "processed_filename": "remote_empty.csv",
+            "manifest_filename": "manifest.json",
+        },
+        "filters": {"markets": ["KOSPI"]},
+    }
+    config_path = tmp_path / "remote_empty.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    manifest = data_collection.collect_data(config_path=config_path)
+
+    processed_path = tmp_path / "processed" / "remote_empty.csv"
+    processed = pd.read_csv(processed_path, dtype={"symbol": str})
+    assert processed.empty
+    assert processed.columns.tolist() == [
+        "date",
+        "symbol",
+        "open",
+        "high",
+        "low",
+        "close",
+        "adjusted_close",
+        "volume",
+        "traded_value",
+        "market",
+        "listing_status",
+        "name",
+        "security_type",
+    ]
+    assert manifest["raw_rows"] == 0
+    assert manifest["processed_rows"] == 0
+    assert manifest["zero_row_policy"] == "write_empty"
+    assert manifest["collection_results"]["empty_symbols"] == ["000001"]
+    assert manifest["collection_results"]["failed_symbols"] == [{"symbol": "000002", "error": "provider unavailable", "attempts": 1}]
+    assert Path(manifest["processed_file"]["path"]).exists()
+    assert Path(manifest["manifest_path"]).exists()
+
+
+def test_remote_zero_row_error_policy_rejects_empty_collection(tmp_path, monkeypatch):
+    import research.data_collection as data_collection
+
+    def fake_collect_pykrx_ohlcv(*, symbols, start, end, market="KRX"):
+        return pd.DataFrame()
+
+    monkeypatch.setattr(data_collection, "collect_pykrx_ohlcv", fake_collect_pykrx_ohlcv)
+    config = {
+        "zero_row_policy": "error",
+        "source": {
+            "type": "pykrx",
+            "symbols": ["000001"],
+            "start": "2024-01-01",
+            "end": "2024-01-02",
+            "market": "KOSPI",
+        },
+        "output": {
+            "raw_dir": str(tmp_path / "raw"),
+            "staging_dir": str(tmp_path / "staging"),
+            "processed_dir": str(tmp_path / "processed"),
+            "processed_filename": "remote_empty.csv",
+            "manifest_filename": "manifest.json",
+        },
+    }
+    config_path = tmp_path / "remote_empty_error.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="zero rows"):
+        data_collection.collect_data(config_path=config_path)
 
 
 def test_remote_manifest_records_empty_failed_symbols_and_retry_config(tmp_path, monkeypatch):
@@ -303,6 +466,61 @@ def test_remote_manifest_records_empty_failed_symbols_and_retry_config(tmp_path,
     assert manifest["collection_results"]["retry"] == {"attempts": 2, "backoff_seconds": 0.0}
     assert manifest["collection_results"]["rate_limit"] == {"sleep_seconds": 0.0}
     assert attempts["000003"] == 2
+    assert manifest["source"]["provider_name"] == "pykrx"
+    assert manifest["source"]["provider_mode"] == "optional_remote_convenience"
+    assert manifest["source"]["adjusted_close_policy"]
+
+
+def test_fdr_manifest_records_estimated_traded_value_and_close_policy(tmp_path, monkeypatch):
+    import research.data_collection as data_collection
+
+    def fake_collect_fdr_ohlcv(*, symbols, start, end, market="KRX"):
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2024-01-02",
+                    "symbol": "000001",
+                    "open": 1000,
+                    "high": 1100,
+                    "low": 900,
+                    "close": 1050,
+                    "adjusted_close": 1050,
+                    "volume": 100,
+                    "traded_value": 105000,
+                    "market": market,
+                    "listing_status": "listed",
+                }
+            ]
+        )
+
+    monkeypatch.setattr(data_collection, "collect_fdr_ohlcv", fake_collect_fdr_ohlcv)
+    config = {
+        "source": {
+            "type": "fdr",
+            "symbols": ["000001"],
+            "start": "2024-01-01",
+            "end": "2024-01-02",
+            "market": "KOSPI",
+        },
+        "output": {
+            "raw_dir": str(tmp_path / "raw"),
+            "staging_dir": str(tmp_path / "staging"),
+            "processed_dir": str(tmp_path / "processed"),
+            "processed_filename": "fdr.csv",
+            "manifest_filename": "manifest.json",
+        },
+        "filters": {"markets": ["KOSPI"]},
+    }
+    config_path = tmp_path / "fdr.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    manifest = data_collection.collect_data(config_path=config_path)
+
+    assert manifest["source"]["provider_name"] == "FinanceDataReader"
+    assert manifest["source"]["provider_mode"] == "optional_remote_convenience"
+    assert manifest["source"]["traded_value_policy"] == "estimated_close_times_volume"
+    assert "estimates traded_value" in manifest["source"]["warnings"][0]
+    assert manifest["source"]["adjusted_close_policy"] == "raw_close_copied_to_adjusted_close"
 
 
 def test_optional_remote_sources_are_lazy_and_research_only(monkeypatch):

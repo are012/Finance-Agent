@@ -19,10 +19,32 @@ from research.utils import file_hash, git_hash, utc_stamp
 SOURCE_TYPES = {"krx_csv", "pykrx", "fdr"}
 PROCESSED_FORMATS = {"csv", "parquet"}
 STATUS_FILE_STATUSES = {"delisted", "admin", "suspended"}
+ZERO_ROW_POLICIES = {"error", "write_empty"}
+CANONICAL_OHLCV_COLUMNS = [
+    "date",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "adjusted_close",
+    "volume",
+    "traded_value",
+    "market",
+    "listing_status",
+    "name",
+    "security_type",
+]
 STATUS_FILE_COLUMN_ALIASES = {
     "date": "date",
     "일자": "date",
     "날짜": "date",
+    "start": "start_date",
+    "start_date": "start_date",
+    "시작일": "start_date",
+    "end": "end_date",
+    "end_date": "end_date",
+    "종료일": "end_date",
     "symbol": "symbol",
     "ticker": "symbol",
     "종목코드": "symbol",
@@ -54,20 +76,26 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
     for directory in (raw_dir, staging_dir, processed_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
+    staging_path = staging_dir / output.get("staging_filename", "staging_ohlcv.csv")
+    processed_path, processed_format = _processed_output(output, processed_dir)
+    manifest_path = processed_dir / output.get("manifest_filename", "manifest.json")
+    zero_row_policy = _zero_row_policy(config, source)
+
     raw_frame, collection_results = _collect_source(source)
     raw_rows = int(len(raw_frame))
+    if raw_rows == 0:
+        if zero_row_policy == "error":
+            raise ValueError("Collection produced zero rows; set zero_row_policy=write_empty to persist an empty manifest")
+        raw_frame = _canonical_empty_ohlcv_frame()
     input_files = _input_files(source, raw_dir)
-    raw_frame, status_files = _merge_status_files(raw_frame, config.get("status_files", {}))
+    raw_frame, status_files = _merge_status_files(raw_frame, config.get("status_files", {}), raw_dir)
 
     staging_frame = validate_ohlcv_frame(raw_frame)
-    staging_path = staging_dir / output.get("staging_filename", "staging_ohlcv.csv")
     staging_frame.to_csv(staging_path, index=False)
 
     processed_frame = apply_universe_filters(staging_frame, _filter_config(config.get("filters", {})))
-    processed_path, processed_format = _processed_output(output, processed_dir)
     _write_processed_frame(processed_frame, processed_path, processed_format)
 
-    manifest_path = processed_dir / output.get("manifest_filename", "manifest.json")
     manifest = _manifest(
         config=config,
         config_path=Path(config_path),
@@ -81,6 +109,7 @@ def collect_data(*, config_path: str | Path) -> dict[str, Any]:
         processed_frame=processed_frame,
         processed_path=processed_path,
         processed_format=processed_format,
+        zero_row_policy=zero_row_policy,
     )
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8")
     manifest["manifest_path"] = str(manifest_path)
@@ -105,9 +134,11 @@ def _validate_collection_config(config: dict[str, Any]) -> None:
             raise ValueError("source.symbols must include at least one ticker for optional remote sources")
         if "start" not in source or "end" not in source:
             raise ValueError("source.start and source.end are required for optional remote sources")
+    _validate_output_path_collisions(output)
     _processed_output(output, Path(output.get("processed_dir", "data/processed")))
     _retry_config(source)
     _rate_limit_config(source)
+    _zero_row_policy(config, source)
     filters = config.get("filters", {})
     for key in ("markets", "exclude_listing_statuses"):
         if key in filters and not isinstance(filters[key], list):
@@ -208,7 +239,7 @@ def _input_files(source: dict[str, Any], raw_dir: Path) -> list[dict[str, Any]]:
     return files
 
 
-def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any], raw_dir: Path) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     if not status_files:
         return frame, []
     data = frame.copy()
@@ -218,6 +249,7 @@ def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any]) -> tu
     decisions = list(data.attrs.get("schema_decisions", []))
     for status in ("admin", "suspended", "delisted"):
         for path_value in _as_path_list(status_files.get(status, [])):
+            raw_copy_path = _copy_local_file(path_value, raw_dir)
             status_frame = _read_status_file(path_value)
             before = data["listing_status"].copy()
             mask = _status_match_mask(data, status_frame)
@@ -227,6 +259,7 @@ def _merge_status_files(frame: pd.DataFrame, status_files: dict[str, Any]) -> tu
                 {
                     "status": status,
                     "path": str(path_value),
+                    "raw_copy_path": str(raw_copy_path),
                     "sha256": file_hash(path_value),
                     "rows": int(len(status_frame)),
                     "matched_rows": int(mask.sum()),
@@ -245,16 +278,17 @@ def _read_status_file(path: str | Path) -> pd.DataFrame:
     else:
         frame = pd.read_csv(source_path, dtype=str)
     frame = frame.rename(columns={column: _status_file_column(column) for column in frame.columns})
-    allowed = {"date", "symbol", "name"}
+    allowed = {"date", "start_date", "end_date", "symbol", "name"}
     unknown = sorted(set(frame.columns) - allowed)
     if unknown:
         raise ValueError(f"Forbidden or unknown status file columns: {unknown}")
     if "symbol" not in frame.columns:
         raise ValueError(f"Status file must include symbol: {source_path}")
-    result = frame[[column for column in ("date", "symbol") if column in frame.columns]].copy()
+    result = frame[[column for column in ("date", "start_date", "end_date", "symbol") if column in frame.columns]].copy()
     result["symbol"] = result["symbol"].map(_normalize_symbol)
-    if "date" in result.columns:
-        result["date"] = pd.to_datetime(result["date"], errors="raise").dt.strftime("%Y-%m-%d")
+    for column in ("date", "start_date", "end_date"):
+        if column in result.columns:
+            result[column] = pd.to_datetime(result[column], errors="coerce").dt.strftime("%Y-%m-%d")
     return result.drop_duplicates().reset_index(drop=True)
 
 
@@ -262,7 +296,22 @@ def _status_match_mask(data: pd.DataFrame, status_frame: pd.DataFrame) -> pd.Ser
     if status_frame.empty:
         return pd.Series(False, index=data.index)
     if "date" not in status_frame.columns:
-        return data["symbol"].astype(str).isin(set(status_frame["symbol"]))
+        row_dates = pd.to_datetime(data["date"], errors="raise")
+        symbol_values = data["symbol"].astype(str)
+        mask = pd.Series(False, index=data.index)
+        has_range = "start_date" in status_frame.columns or "end_date" in status_frame.columns
+        if not has_range:
+            return symbol_values.isin(set(status_frame["symbol"]))
+        for _, row in status_frame.iterrows():
+            row_mask = symbol_values.eq(str(row["symbol"]))
+            start_date = row.get("start_date")
+            end_date = row.get("end_date")
+            if pd.notna(start_date):
+                row_mask &= row_dates >= pd.Timestamp(start_date)
+            if pd.notna(end_date):
+                row_mask &= row_dates <= pd.Timestamp(end_date)
+            mask |= row_mask
+        return mask
     row_dates = pd.to_datetime(data["date"], errors="raise").dt.strftime("%Y-%m-%d")
     row_keys = pd.Series(list(zip(row_dates, data["symbol"].astype(str))), index=data.index)
     status_keys = set(zip(status_frame["date"], status_frame["symbol"]))
@@ -294,6 +343,22 @@ def _processed_output(output: dict[str, Any], processed_dir: Path) -> tuple[Path
     raise ValueError("processed output must use .csv or .parquet, or define output.processed_format")
 
 
+def _validate_output_path_collisions(output: dict[str, Any]) -> None:
+    staging_dir = Path(output.get("staging_dir", "data/staging"))
+    processed_dir = Path(output.get("processed_dir", "data/processed"))
+    paths = {
+        "staging": staging_dir / output.get("staging_filename", "staging_ohlcv.csv"),
+        "processed": processed_dir / str(output.get("processed_filename", "collected_ohlcv.csv")),
+        "manifest": processed_dir / output.get("manifest_filename", "manifest.json"),
+    }
+    resolved: dict[Path, str] = {}
+    for label, path in paths.items():
+        resolved_path = path.resolve(strict=False)
+        if resolved_path in resolved:
+            raise ValueError(f"Output paths must not collide: {resolved[resolved_path]} and {label} both use {resolved_path}")
+        resolved[resolved_path] = label
+
+
 def _write_processed_frame(frame: pd.DataFrame, path: Path, processed_format: str) -> None:
     if processed_format == "csv":
         frame.to_csv(path, index=False)
@@ -323,6 +388,54 @@ def _rate_limit_config(source: dict[str, Any]) -> dict[str, Any]:
     return {"sleep_seconds": sleep_seconds}
 
 
+def _zero_row_policy(config: dict[str, Any], source: dict[str, Any]) -> str:
+    default = "write_empty" if source.get("type") in {"pykrx", "fdr"} else "error"
+    policy = str(config.get("zero_row_policy", source.get("zero_row_policy", default)))
+    if policy not in ZERO_ROW_POLICIES:
+        raise ValueError("zero_row_policy must be error or write_empty")
+    return policy
+
+
+def _canonical_empty_ohlcv_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=CANONICAL_OHLCV_COLUMNS)
+
+
+def _source_manifest(source: dict[str, Any]) -> dict[str, Any]:
+    source_type = source.get("type")
+    base = {"type": source_type, "research_only": True}
+    if source_type == "krx_csv":
+        base.update(
+            {
+                "provider_name": "local_krx_csv",
+                "provider_mode": "local_offline",
+                "adjusted_close_policy": "uses_local_adjusted_close_or_fills_from_close",
+                "traded_value_policy": "uses_local_traded_value",
+                "warnings": [],
+            }
+        )
+    elif source_type == "pykrx":
+        base.update(
+            {
+                "provider_name": "pykrx",
+                "provider_mode": "optional_remote_convenience",
+                "adjusted_close_policy": "raw_close_copied_to_adjusted_close",
+                "traded_value_policy": "uses_provider_traded_value",
+                "warnings": [],
+            }
+        )
+    elif source_type == "fdr":
+        base.update(
+            {
+                "provider_name": "FinanceDataReader",
+                "provider_mode": "optional_remote_convenience",
+                "adjusted_close_policy": "raw_close_copied_to_adjusted_close",
+                "traded_value_policy": "estimated_close_times_volume",
+                "warnings": ["FDR source estimates traded_value as close * volume because provider output lacks traded_value."],
+            }
+        )
+    return base
+
+
 def _manifest(
     *,
     config: dict[str, Any],
@@ -337,6 +450,7 @@ def _manifest(
     processed_frame: pd.DataFrame,
     processed_path: Path,
     processed_format: str,
+    zero_row_policy: str,
 ) -> dict[str, Any]:
     filters = config.get("filters", {})
     return {
@@ -344,10 +458,11 @@ def _manifest(
         "created_at": utc_stamp(),
         "git_hash": git_hash(),
         "config_path": str(config_path),
-        "source": {"type": source.get("type"), "research_only": True},
+        "source": _source_manifest(source),
         "input_files": input_files,
         "status_files": status_files,
         "collection_results": collection_results,
+        "zero_row_policy": zero_row_policy,
         "raw_rows": raw_rows,
         "staging_rows": int(len(staging_frame)),
         "processed_rows": int(len(processed_frame)),
@@ -384,6 +499,14 @@ def _require_existing_file(path_value: str | Path, field: str) -> None:
     path = Path(path_value)
     if not path.exists() or not path.is_file():
         raise ValueError(f"{field} must reference an existing local file: {path}")
+
+
+def _copy_local_file(path_value: str | Path, raw_dir: Path) -> Path:
+    path = Path(path_value)
+    raw_copy = raw_dir / path.name
+    if path.resolve() != raw_copy.resolve():
+        shutil.copy2(path, raw_copy)
+    return raw_copy
 
 
 def _status_file_column(column: str) -> str:

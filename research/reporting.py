@@ -137,7 +137,7 @@ def write_final_report(
             "bootstrap_confidence": "placeholder",
         },
         "limitations": summary["limitations"],
-        **_research_report_sections(config=config, selected=selected, split=split),
+        **_research_report_sections(config=config, selected=selected, split=split, holdout_metrics=holdout_metrics, decision=decision),
     }
     holdout_file.write_text(json.dumps(holdout_payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
     summary.update(holdout_payload)
@@ -195,6 +195,10 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
         f"- Strategy family: {selected.get('strategy_family', 'none')}",
         f"- Holdout evaluated in this run: {summary.get('holdout_evaluated')}",
         "",
+        "## Research Objective",
+        "",
+        str(summary.get("research_objective", "")),
+        "",
         "## Data Assumptions",
         "",
         "```json",
@@ -236,6 +240,12 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
             json.dumps(selected_hypothesis, indent=2, sort_keys=True, default=str),
             "```",
             "",
+            "## Selected Strategy Parameters",
+            "",
+            "```json",
+            json.dumps(summary.get("selected_strategy_parameters", {}), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
             "## Train Metrics",
             "",
             "```json",
@@ -246,6 +256,12 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
             "",
             "```json",
             json.dumps(summary.get("validation_metrics", selected.get("validation_metrics", selected.get("metrics"))), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
+            "## Yearly Results",
+            "",
+            "```json",
+            json.dumps(summary.get("yearly_results", {}), indent=2, sort_keys=True, default=str),
             "```",
             "",
             "## Cost Sensitivity",
@@ -310,7 +326,15 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
         ]
     )
     lines.extend(f"- {item}" for item in summary.get("limitations", []))
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            "## Final Conclusion",
+            "",
+            str(summary.get("final_conclusion", summary.get("decision"))),
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -326,9 +350,19 @@ def _range(frame) -> dict[str, str]:
     return {"start": str(frame["date"].min()), "end": str(frame["date"].max()), "rows": str(len(frame))}
 
 
-def _research_report_sections(*, config: dict[str, Any], selected: dict[str, Any], split) -> dict[str, Any]:
+def _research_report_sections(
+    *,
+    config: dict[str, Any],
+    selected: dict[str, Any],
+    split,
+    holdout_metrics: dict[str, Any],
+    decision: str,
+) -> dict[str, Any]:
     validation_outputs = selected.get("validation_outputs") or {}
+    train_metrics = selected.get("train_metrics", {})
+    validation_metrics = selected.get("validation_metrics", selected.get("metrics", {}))
     return {
+        "research_objective": "Evaluate chart-only Korean-market systematic trading hypotheses offline, with final holdout reserved for one locked report evaluation.",
         "data_assumptions": {
             "research_only": True,
             "offline_local_data_only": True,
@@ -347,11 +381,33 @@ def _research_report_sections(*, config: dict[str, Any], selected: dict[str, Any
             "schema_decisions": validation_outputs.get("schema", {}).get("inconsistencies", []),
         },
         "split_ranges": _split_ranges(split),
-        "train_metrics": selected.get("train_metrics", {}),
-        "validation_metrics": selected.get("validation_metrics", selected.get("metrics", {})),
+        "selected_strategy_parameters": (selected.get("strategy") or {}).get("parameters", {}),
+        "train_metrics": train_metrics,
+        "validation_metrics": validation_metrics,
+        "yearly_results": {
+            "train": train_metrics.get("yearly_returns", {}),
+            "validation": validation_metrics.get("yearly_returns", {}),
+            "final_holdout": holdout_metrics.get("yearly_returns", {}),
+        },
+        "trade_count": {
+            "train": train_metrics.get("trade_count", 0),
+            "validation": validation_metrics.get("trade_count", 0),
+            "final_holdout": holdout_metrics.get("trade_count", 0),
+        },
+        "turnover": {
+            "train": train_metrics.get("turnover", 0),
+            "validation": validation_metrics.get("turnover", 0),
+            "final_holdout": holdout_metrics.get("turnover", 0),
+        },
+        "exposure": {
+            "train": train_metrics.get("exposure", 0),
+            "validation": validation_metrics.get("exposure", 0),
+            "final_holdout": holdout_metrics.get("exposure", 0),
+        },
         "cost_sensitivity": validation_outputs.get("cost_sensitivity", {}),
         "parameter_sensitivity": validation_outputs.get("parameter_sensitivity", {}),
         "concentration_analysis": validation_outputs.get("concentration", {}),
         "walk_forward_summary": validation_outputs.get("walk_forward", {}),
         "critic_flags": selected.get("critic", {}).get("flags", []),
+        "final_conclusion": decision,
     }

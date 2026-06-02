@@ -294,13 +294,19 @@ def test_final_report_contains_required_research_sections(tmp_path):
     markdown = (report_dir / "final_report.md").read_text(encoding="utf-8")
 
     for key in [
+        "research_objective",
         "data_assumptions",
         "allowed_data",
         "forbidden_data",
         "schema_summary",
         "split_ranges",
+        "selected_strategy_parameters",
         "train_metrics",
         "validation_metrics",
+        "yearly_results",
+        "trade_count",
+        "turnover",
+        "exposure",
         "cost_sensitivity",
         "parameter_sensitivity",
         "concentration_analysis",
@@ -308,17 +314,23 @@ def test_final_report_contains_required_research_sections(tmp_path):
         "critic_flags",
         "overfitting_controls",
         "limitations",
+        "final_conclusion",
     ]:
         assert key in summary
+    assert summary["final_conclusion"] in {"PASS", "FAIL", "NEEDS_MORE_RESEARCH"}
     for heading in [
+        "## Research Objective",
         "## Data Assumptions",
         "## Schema Summary",
         "## Split Ranges",
+        "## Selected Strategy Parameters",
         "## Train Metrics",
+        "## Yearly Results",
         "## Cost Sensitivity",
         "## Parameter Sensitivity",
         "## Walk-Forward Summary",
         "## Critic Flags",
+        "## Final Conclusion",
     ]:
         assert heading in markdown
 

@@ -7,7 +7,7 @@ from research.reporting import write_final_report
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate final report and one-time holdout evaluation.")
-    parser.add_argument("--ledger", required=True)
+    parser.add_argument("--ledger")
     parser.add_argument("--output-dir", default="outputs/reports")
     parser.add_argument("--config", default="configs/example.yaml")
     args = parser.parse_args(argv)

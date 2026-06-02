@@ -42,10 +42,23 @@ class CostModel:
             cash_delta=round(cash_delta, 10),
         )
 
+    def scaled(self, multiplier: float) -> "CostModel":
+        return CostModel(
+            commission_rate=self.commission_rate * multiplier,
+            tax_rate=self.tax_rate * multiplier,
+            slippage_bps=self.slippage_bps * multiplier,
+        )
+
     @classmethod
     def from_config(cls, config: dict) -> "CostModel":
+        commission_rate = config.get("commission_rate")
+        if commission_rate is None:
+            commission_rate = float(config.get("commission_bps", 1.5)) / 10000.0
+        tax_rate = config.get("tax_rate")
+        if tax_rate is None:
+            tax_rate = float(config.get("sell_tax_bps", 20.0)) / 10000.0
         return cls(
-            commission_rate=float(config.get("commission_rate", cls.commission_rate)),
-            tax_rate=float(config.get("tax_rate", cls.tax_rate)),
+            commission_rate=float(commission_rate),
+            tax_rate=float(tax_rate),
             slippage_bps=float(config.get("slippage_bps", cls.slippage_bps)),
         )

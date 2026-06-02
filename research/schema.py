@@ -11,13 +11,17 @@ REQUIRED_COLUMNS = {
     "high",
     "low",
     "close",
-    "adjusted_close",
     "volume",
     "traded_value",
     "market",
 }
 
-OPTIONAL_COLUMNS = {"listing_status"}
+OPTIONAL_COLUMNS = {
+    "adjusted_close",
+    "listing_status",
+    "name",
+    "security_type",
+}
 ALLOWED_COLUMNS = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
 
 NUMERIC_COLUMNS = [
@@ -42,21 +46,101 @@ def validate_ohlcv_frame(frame: pd.DataFrame, *, allowed_extra_columns: Iterable
         raise ValueError(f"Forbidden or unknown columns: {unknown}")
 
     validated = frame.copy()
+    decisions: list[str] = []
     validated["date"] = pd.to_datetime(validated["date"], errors="raise")
     validated["symbol"] = validated["symbol"].astype(str)
     validated["market"] = validated["market"].astype(str)
+    if "listing_status" not in validated.columns:
+        validated["listing_status"] = "listed"
+        decisions.append("filled missing listing_status with listed")
+    if "adjusted_close" not in validated.columns:
+        validated["adjusted_close"] = validated["close"]
+        decisions.append("filled missing adjusted_close from close")
 
     for column in NUMERIC_COLUMNS:
         validated[column] = pd.to_numeric(validated[column], errors="raise")
 
-    if (validated[["open", "high", "low", "close", "adjusted_close"]] <= 0).any().any():
+    _validate_prices(validated)
+    _validate_non_negative(validated)
+
+    duplicate_count = int(validated.duplicated(subset=["date", "symbol"], keep="last").sum())
+    if duplicate_count:
+        validated = validated.sort_values(["symbol", "date"]).drop_duplicates(subset=["date", "symbol"], keep="last")
+        decisions.append(f"deduplicated {duplicate_count} duplicate date/symbol rows using last row")
+
+    validated = validated.sort_values(["symbol", "date"]).reset_index(drop=True)
+    validated.attrs["schema_decisions"] = decisions
+    return validated
+
+
+def apply_universe_filters(frame: pd.DataFrame, config: dict | None = None) -> pd.DataFrame:
+    config = config or {}
+    data = frame.copy()
+    decisions = list(data.attrs.get("schema_decisions", []))
+
+    markets = set(config.get("markets") or [])
+    if markets:
+        before = len(data)
+        data = data[data["market"].isin(markets)].copy()
+        decisions.append(f"universe market filter removed {before - len(data)} rows")
+
+    if config.get("exclude_suspended", False):
+        before = len(data)
+        data = data[~data["listing_status"].fillna("listed").str.lower().isin({"suspended", "halted"})].copy()
+        decisions.append(f"excluded suspended rows: {before - len(data)}")
+
+    if config.get("exclude_delisted", False):
+        before = len(data)
+        data = data[~data["listing_status"].fillna("listed").str.lower().eq("delisted")].copy()
+        decisions.append(f"excluded delisted rows: {before - len(data)}")
+
+    low_price = config.get("exclude_low_price_below")
+    if low_price is not None:
+        before = len(data)
+        data = data[data["close"] >= float(low_price)].copy()
+        decisions.append(f"excluded low-price rows: {before - len(data)}")
+
+    min_traded_value = config.get("min_traded_value")
+    if min_traded_value is not None:
+        lookback = int(config.get("min_traded_value_lookback", 20))
+        tv_ma = (
+            data.sort_values(["symbol", "date"])
+            .groupby("symbol")["traded_value"]
+            .transform(lambda series: series.rolling(lookback, min_periods=1).mean())
+        )
+        before = len(data)
+        data = data[tv_ma >= float(min_traded_value)].copy()
+        decisions.append(f"excluded illiquid rows: {before - len(data)}")
+
+    for option, pattern in (
+        ("exclude_preferred", "preferred"),
+        ("exclude_spacs", "spac"),
+        ("exclude_etfs", "etf"),
+    ):
+        if config.get(option, False) and "security_type" in data.columns:
+            before = len(data)
+            data = data[~data["security_type"].fillna("").str.lower().str.contains(pattern)].copy()
+            decisions.append(f"{option} removed {before - len(data)} rows")
+
+    data.attrs["schema_decisions"] = decisions
+    return data.sort_values(["symbol", "date"]).reset_index(drop=True)
+
+
+def _validate_prices(frame: pd.DataFrame) -> None:
+    if (frame[["open", "high", "low", "close", "adjusted_close"]] <= 0).any().any():
         raise ValueError("Price columns must be positive")
-    if (validated[["volume", "traded_value"]] < 0).any().any():
+    if (frame["high"] < frame["low"]).any():
+        raise ValueError("high must be >= low")
+    if (frame["high"] < frame["open"]).any():
+        raise ValueError("high must be >= open")
+    if (frame["high"] < frame["close"]).any():
+        raise ValueError("high must be >= close")
+    if (frame["low"] > frame["open"]).any():
+        raise ValueError("low must be <= open")
+    if (frame["low"] > frame["close"]).any():
+        raise ValueError("low must be <= close")
+
+
+def _validate_non_negative(frame: pd.DataFrame) -> None:
+    if (frame[["volume", "traded_value"]] < 0).any().any():
         raise ValueError("Volume and traded_value must be non-negative")
-
-    duplicate_mask = validated.duplicated(subset=["date", "symbol"], keep=False)
-    if duplicate_mask.any():
-        duplicates = validated.loc[duplicate_mask, ["date", "symbol"]].to_dict("records")
-        raise ValueError(f"Duplicate date/symbol rows: {duplicates[:5]}")
-
-    return validated.sort_values(["symbol", "date"]).reset_index(drop=True)

@@ -61,16 +61,19 @@ def _add_symbol_features(group: pd.DataFrame, windows: list[int]) -> pd.DataFram
         group[f"atr_{window}"] = true_range.rolling(window, min_periods=window).mean()
         group[f"volume_ma_{window}"] = group["volume"].rolling(window, min_periods=window).mean()
         group[f"volume_surge_{window}"] = group["volume"] / group[f"volume_ma_{window}"] - 1.0
+        group[f"volume_ratio_{window}"] = group["volume"] / group[f"volume_ma_{window}"]
         group[f"traded_value_ma_{window}"] = group["traded_value"].rolling(window, min_periods=window).mean()
         group[f"prior_high_{window}"] = group["high"].shift(1).rolling(window, min_periods=window).max()
         group[f"prior_low_{window}"] = group["low"].shift(1).rolling(window, min_periods=window).min()
         group[f"high_breakout_{window}"] = (group["high"] > group[f"prior_high_{window}"]).map(bool).astype(object)
         group[f"low_breakdown_{window}"] = (group["low"] < group[f"prior_low_{window}"]).map(bool).astype(object)
         group[f"rsi_{window}"] = _rsi(group["return_1"], window)
+        group[f"range_contraction_{window}"] = group["intraday_range"] / group["intraday_range"].rolling(window, min_periods=window).mean()
 
         ema_fast = close.ewm(span=max(2, window // 2), adjust=False, min_periods=window).mean()
         ema_slow = close.ewm(span=window, adjust=False, min_periods=window).mean()
         group[f"macd_{window}"] = ema_fast - ema_slow
+        group[f"ma_trend_{window}"] = (close > group[f"ma_{window}"]).map(bool).astype(object)
 
     return group
 

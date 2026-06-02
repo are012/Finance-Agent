@@ -1,26 +1,90 @@
 data:
   path: data/sample/synthetic_ohlcv.csv
+  format: csv
   date_column: date
+  symbol_column: symbol
 
-research:
-  budget: 3
+universe:
+  markets: ["KOSPI", "KOSDAQ"]
+  min_traded_value_lookback: 5
+  min_traded_value: 100000
+  exclude_suspended: true
+  exclude_delisted: false
+  exclude_low_price_below: 100
+  exclude_preferred: false
+  exclude_spacs: false
+  exclude_etfs: false
+
+splits:
+  train_start: "2024-01-02"
+  train_end: "2024-02-09"
+  validation_start: "2024-02-12"
+  validation_end: "2024-02-29"
+  final_holdout_start: "2024-03-01"
+  final_holdout_end: "2024-03-29"
+
+backtest:
   initial_cash: 1000000
   max_positions: 3
-  feature_windows: [5, 20]
-  final_holdout_key: example-synthetic-holdout-v1
-
-split:
-  train_fraction: 0.6
-  validation_fraction: 0.2
-  holdout_fraction: 0.2
+  position_size_pct: 0.34
+  rebalance_frequency: daily
+  signal_timing: close
+  execution_timing: next_open
+  allow_same_bar_execution: false
 
 costs:
-  commission_rate: 0.00015
-  tax_rate: 0.0020
+  commission_bps: 1.5
+  sell_tax_bps: 20
   slippage_bps: 5
+  cost_sensitivity_multipliers: [1, 2, 3]
+
+liquidity:
+  max_order_pct_of_avg_traded_value: 0.25
+  avg_traded_value_lookback: 5
+  on_limit: partial
+
+risk:
+  max_position_pct: 0.34
+  max_gross_exposure: 1.0
+  stop_loss_pct: null
+  take_profit_pct: null
+  trailing_stop_atr_multiple: null
+
+hypotheses:
+  paths:
+    - configs/sample_hypothesis.yaml
+  include_builtin: true
+
+research:
+  max_hypotheses: 8
+  budget: 8
+  random_seed: 42
+  min_trades: 1
+  feature_windows: [3, 5, 10, 20]
+  final_holdout_key: example-synthetic-holdout-v2
+  allow_final_holdout_during_research: false
 
 validation_gates:
-  min_total_return: 0.0
-  max_drawdown_floor: -0.25
+  min_total_return: -1.0
+  min_cagr: -1.0
+  min_sharpe: -10.0
+  max_mdd: 0.95
+  max_drawdown_floor: -0.95
+  min_trade_count: 1
   min_trades: 1
-  min_score: 0.0
+  max_turnover: null
+  min_score: -1000.0
+  require_cost_2x_positive: false
+  require_parameter_sensitivity_pass: false
+
+walk_forward:
+  train_size: 10
+  validation_size: 5
+  step_size: 5
+
+parameter_sensitivity:
+  lookback_multipliers: [0.75, 1.0, 1.25]
+
+report:
+  output_dir: outputs/reports
+  include_charts: false

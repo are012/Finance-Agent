@@ -5,6 +5,7 @@ __all__ = [
     "costs",
     "critic",
     "data_loader",
+    "experiment",
     "features",
     "hypothesis",
     "ledger",

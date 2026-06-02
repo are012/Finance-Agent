@@ -1,0 +1,26 @@
+data:
+  path: data/sample/synthetic_ohlcv.csv
+  date_column: date
+
+research:
+  budget: 3
+  initial_cash: 1000000
+  max_positions: 3
+  feature_windows: [5, 20]
+  final_holdout_key: example-synthetic-holdout-v1
+
+split:
+  train_fraction: 0.6
+  validation_fraction: 0.2
+  holdout_fraction: 0.2
+
+costs:
+  commission_rate: 0.00015
+  tax_rate: 0.0020
+  slippage_bps: 5
+
+validation_gates:
+  min_total_return: 0.0
+  max_drawdown_floor: -0.25
+  min_trades: 1
+  min_score: 0.0

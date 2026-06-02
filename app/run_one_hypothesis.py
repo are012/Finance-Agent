@@ -4,9 +4,9 @@ import argparse
 from pathlib import Path
 
 from research.data_loader import load_config, load_configured_data
-from research.experiment import evaluate_hypothesis
+from research.experiment import evaluate_hypothesis, rejected_hypothesis_row
 from research.features import add_chart_features
-from research.hypothesis import generate_hypotheses, load_hypothesis_spec
+from research.hypothesis import InvalidHypothesis, generate_hypotheses, load_hypothesis_spec
 from research.ledger import ExperimentLedger
 from research.utils import ensure_output_dirs
 from research.validation import SplitConfig, split_by_date
@@ -45,13 +45,25 @@ def run_one_hypothesis(
     featured = add_chart_features(data, windows=list(config["research"].get("feature_windows", [5, 20])))
     split = split_by_date(featured, SplitConfig.from_config(config.get("splits", config.get("split"))))
     if hypothesis_path:
-        hypothesis = load_hypothesis_spec(hypothesis_path)
+        try:
+            hypothesis = load_hypothesis_spec(hypothesis_path)
+        except Exception as exc:
+            hypothesis = InvalidHypothesis(
+                hypothesis_id=f"INVALID-{Path(hypothesis_path).stem}",
+                name=f"Invalid hypothesis spec: {hypothesis_path}",
+                rationale=str(exc),
+                error=str(exc),
+                source_path=str(hypothesis_path),
+            )
     else:
         hypotheses = {hypothesis.hypothesis_id: hypothesis for hypothesis in generate_hypotheses(config["research"]["max_hypotheses"])}
         if hypothesis_id not in hypotheses:
             raise SystemExit(f"Unknown hypothesis id: {hypothesis_id}")
         hypothesis = hypotheses[hypothesis_id]
-    row = evaluate_hypothesis(hypothesis=hypothesis, split=split, featured=featured, config=config, output_paths=paths, sequence=1)
+    if getattr(hypothesis, "is_invalid", False):
+        row = rejected_hypothesis_row(hypothesis=hypothesis, config=config, sequence=1)
+    else:
+        row = evaluate_hypothesis(hypothesis=hypothesis, split=split, featured=featured, config=config, output_paths=paths, sequence=1)
     ExperimentLedger(paths["ledger"] / "experiments.jsonl").append(row)
     return row
 

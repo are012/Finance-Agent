@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from app.run_one_hypothesis import run_one_hypothesis
 from app.run_research import run_research
 from research.backtester import backtest_signals
 from research.costs import CostModel
@@ -190,6 +191,138 @@ def test_research_loop_logs_invalid_hypothesis_and_continues(tmp_path):
     assert rows[0]["critic"]["flags"][0]["code"] == "INVALID_HYPOTHESIS"
 
 
+def test_one_hypothesis_logs_invalid_hypothesis_path(tmp_path):
+    invalid_path = tmp_path / "invalid.yaml"
+    invalid_path.write_text(
+        yaml.safe_dump(
+            {
+                "id": "H-INVALID-ONE",
+                "idea": "Missing exit rule should be logged instead of crashing.",
+                "strategy_family": "momentum",
+                "features": ["momentum_20", "traded_value_ma_20"],
+                "entry_rule": {"expression": "momentum_20 > 0"},
+                "parameters": {"lookback_bars": 20, "holding_bars": 3},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = run_one_hypothesis(
+        config_path="configs/example.yaml",
+        hypothesis_path=invalid_path,
+        output_dir=tmp_path / "outputs",
+    )
+
+    ledger_rows = [json.loads(line) for line in (tmp_path / "outputs" / "ledger" / "experiments.jsonl").read_text().splitlines()]
+    assert row["status"] == "FAIL"
+    assert ledger_rows[0]["hypothesis_id"].startswith("INVALID-")
+    assert ledger_rows[0]["critic"]["flags"][0]["code"] == "INVALID_HYPOTHESIS"
+
+
+def test_research_loop_records_real_walk_forward_and_parameter_sensitivity(tmp_path):
+    ledger_path = run_research(config_path="configs/example.yaml", output_dir=tmp_path / "outputs")
+
+    first_row = json.loads(ledger_path.read_text(encoding="utf-8").splitlines()[0])
+    walk_forward = first_row["validation_outputs"]["walk_forward"]
+    parameter_sensitivity = first_row["validation_outputs"]["parameter_sensitivity"]
+
+    assert walk_forward["window_count"] > 0
+    assert walk_forward["rows"]
+    assert {"train_metrics", "validation_metrics", "validation_trades"}.issubset(walk_forward["rows"][0])
+    assert "deferred" not in json.dumps(walk_forward).lower()
+    assert parameter_sensitivity["variant_count"] > 0
+    assert parameter_sensitivity["rows"]
+    assert {"parameters", "metrics", "trade_count", "status"}.issubset(parameter_sensitivity["rows"][0])
+    assert "placeholder" not in json.dumps(parameter_sensitivity).lower()
+
+
+def test_structured_critic_covers_remaining_risk_codes():
+    critic = critique_experiment(
+        hypothesis_id="H-RISK",
+        feature_columns=["pe_ratio", "future_return", "foreign_net_buy"],
+        metrics={"periods": 30, "max_drawdown": -0.01, "turnover": 1.0, "sharpe": 1.0},
+        trades_count=5,
+        gates={"min_trade_count": 1},
+        config={
+            "backtest": {"signal_timing": "close", "execution_timing": "same_close", "allow_same_bar_execution": True},
+            "costs": {"commission_bps": 0},
+            "universe": {"survivorship_bias_risk": True},
+        },
+        validation_outputs={
+            "schema": {"inconsistencies": ["filled missing adjusted_close from close"]},
+            "liquidity": {"rejected_order_count": 2, "partial_fill_count": 1},
+            "concentration": {"max_symbol_pnl_share": 0.2, "max_year_pnl_share": 0.95, "top_trade_pnl_share": 0.1},
+        },
+    )
+
+    codes = {flag["code"] for flag in critic["flags"]}
+    assert {
+        "SAME_BAR_EXECUTION_RISK",
+        "SURVIVORSHIP_BIAS_RISK",
+        "MISSING_COST_ASSUMPTION",
+        "FORBIDDEN_DATA",
+        "SCHEMA_INCONSISTENCY",
+        "UNREALISTIC_EXECUTION",
+        "ILLIQUID_EXECUTION",
+        "PROFIT_CONCENTRATION",
+    }.issubset(codes)
+
+
+def test_final_report_contains_required_research_sections(tmp_path):
+    ledger_path = run_research(config_path="configs/example.yaml", output_dir=tmp_path / "outputs")
+    report_dir = tmp_path / "outputs" / "reports"
+
+    report = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.final_report",
+            "--config",
+            "configs/example.yaml",
+            "--ledger",
+            str(ledger_path),
+            "--output-dir",
+            str(report_dir),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert report.returncode == 0, report.stderr
+
+    summary = json.loads((report_dir / "final_report.json").read_text(encoding="utf-8"))
+    markdown = (report_dir / "final_report.md").read_text(encoding="utf-8")
+
+    for key in [
+        "data_assumptions",
+        "allowed_data",
+        "forbidden_data",
+        "schema_summary",
+        "split_ranges",
+        "train_metrics",
+        "validation_metrics",
+        "cost_sensitivity",
+        "parameter_sensitivity",
+        "concentration_analysis",
+        "walk_forward_summary",
+        "critic_flags",
+        "overfitting_controls",
+        "limitations",
+    ]:
+        assert key in summary
+    for heading in [
+        "## Data Assumptions",
+        "## Schema Summary",
+        "## Split Ranges",
+        "## Train Metrics",
+        "## Cost Sensitivity",
+        "## Parameter Sensitivity",
+        "## Walk-Forward Summary",
+        "## Critic Flags",
+    ]:
+        assert heading in markdown
+
+
 def test_backtester_rejects_orders_over_liquidity_cap():
     bars = _strict_bars()
     signals = pd.DataFrame(
@@ -275,7 +408,7 @@ def test_ledger_records_reconstruction_metadata(tmp_path):
 
 def test_cli_end_to_end_uses_external_hypothesis_and_locks_holdout_once(tmp_path):
     output_dir = tmp_path / "outputs"
-    hypothesis_path = "configs/sample_hypothesis.yaml"
+    hypothesis_path = "configs/hypotheses/momentum_20.yaml"
 
     one = subprocess.run(
         [

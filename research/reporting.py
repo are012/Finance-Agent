@@ -9,9 +9,37 @@ from research.experiment import run_strategy_on_frame
 from research.features import add_chart_features
 from research.ledger import ExperimentLedger
 from research.metrics import compute_metrics
+from research.schema import OPTIONAL_COLUMNS, REQUIRED_COLUMNS
 from research.scoring import select_best_candidate
 from research.strategy import StrategySpec
 from research.validation import SplitConfig, split_by_date, validation_gates_pass
+
+ALLOWED_DATA = [
+    "date",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "adjusted_close",
+    "volume",
+    "traded_value",
+    "market",
+    "listing_status",
+    "chart-derived indicators from allowed fields",
+]
+FORBIDDEN_DATA = [
+    "fundamentals",
+    "financial statements",
+    "earnings",
+    "analyst reports",
+    "news",
+    "disclosures",
+    "macroeconomic indicators",
+    "investor-flow data",
+    "future signal data",
+    "live market data during tests",
+]
 
 
 def write_final_report(
@@ -109,6 +137,7 @@ def write_final_report(
             "bootstrap_confidence": "placeholder",
         },
         "limitations": summary["limitations"],
+        **_research_report_sections(config=config, selected=selected, split=split),
     }
     holdout_file.write_text(json.dumps(holdout_payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
     summary.update(holdout_payload)
@@ -165,6 +194,36 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
         f"- Selected hypothesis: {selected.get('hypothesis_id', 'none')}",
         f"- Strategy family: {selected.get('strategy_family', 'none')}",
         f"- Holdout evaluated in this run: {summary.get('holdout_evaluated')}",
+        "",
+        "## Data Assumptions",
+        "",
+        "```json",
+        json.dumps(summary.get("data_assumptions", {}), indent=2, sort_keys=True, default=str),
+        "```",
+        "",
+        "## Allowed Data",
+        "",
+        "```json",
+        json.dumps(summary.get("allowed_data", []), indent=2, sort_keys=True, default=str),
+        "```",
+        "",
+        "## Forbidden Data",
+        "",
+        "```json",
+        json.dumps(summary.get("forbidden_data", []), indent=2, sort_keys=True, default=str),
+        "```",
+        "",
+        "## Schema Summary",
+        "",
+        "```json",
+        json.dumps(summary.get("schema_summary", {}), indent=2, sort_keys=True, default=str),
+        "```",
+        "",
+        "## Split Ranges",
+        "",
+        "```json",
+        json.dumps(summary.get("split_ranges", {}), indent=2, sort_keys=True, default=str),
+        "```",
     ]
     if reused_lock:
         lines.append("- Final holdout status: reused locked result; final holdout was not evaluated again")
@@ -177,10 +236,40 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
             json.dumps(selected_hypothesis, indent=2, sort_keys=True, default=str),
             "```",
             "",
+            "## Train Metrics",
+            "",
+            "```json",
+            json.dumps(summary.get("train_metrics"), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
             "## Validation Metrics",
             "",
             "```json",
-            json.dumps(selected.get("validation_metrics", selected.get("metrics")), indent=2, sort_keys=True, default=str),
+            json.dumps(summary.get("validation_metrics", selected.get("validation_metrics", selected.get("metrics"))), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
+            "## Cost Sensitivity",
+            "",
+            "```json",
+            json.dumps(summary.get("cost_sensitivity", {}), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
+            "## Parameter Sensitivity",
+            "",
+            "```json",
+            json.dumps(summary.get("parameter_sensitivity", {}), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
+            "## Concentration Analysis",
+            "",
+            "```json",
+            json.dumps(summary.get("concentration_analysis", {}), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
+            "## Walk-Forward Summary",
+            "",
+            "```json",
+            json.dumps(summary.get("walk_forward_summary", {}), indent=2, sort_keys=True, default=str),
             "```",
             "",
             "## Holdout Metrics",
@@ -203,6 +292,12 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
     lines.extend(f"- {finding}" for finding in findings) if findings else lines.append("- No blocking critic findings.")
     lines.extend(
         [
+            "",
+            "## Critic Flags",
+            "",
+            "```json",
+            json.dumps(summary.get("critic_flags", []), indent=2, sort_keys=True, default=str),
+            "```",
             "",
             "## Overfitting Controls",
             "",
@@ -229,3 +324,34 @@ def _split_ranges(split) -> dict[str, dict[str, str]]:
 
 def _range(frame) -> dict[str, str]:
     return {"start": str(frame["date"].min()), "end": str(frame["date"].max()), "rows": str(len(frame))}
+
+
+def _research_report_sections(*, config: dict[str, Any], selected: dict[str, Any], split) -> dict[str, Any]:
+    validation_outputs = selected.get("validation_outputs") or {}
+    return {
+        "data_assumptions": {
+            "research_only": True,
+            "offline_local_data_only": True,
+            "chart_only": True,
+            "no_live_trading": True,
+            "data_path": config.get("data", {}).get("path"),
+            "data_format": config.get("data", {}).get("format", "csv"),
+            "execution_model": selected.get("execution_model"),
+        },
+        "allowed_data": ALLOWED_DATA,
+        "forbidden_data": FORBIDDEN_DATA,
+        "schema_summary": {
+            "required_columns": sorted(REQUIRED_COLUMNS),
+            "optional_columns": sorted(OPTIONAL_COLUMNS),
+            "data_columns": ALLOWED_DATA[:-1],
+            "schema_decisions": validation_outputs.get("schema", {}).get("inconsistencies", []),
+        },
+        "split_ranges": _split_ranges(split),
+        "train_metrics": selected.get("train_metrics", {}),
+        "validation_metrics": selected.get("validation_metrics", selected.get("metrics", {})),
+        "cost_sensitivity": validation_outputs.get("cost_sensitivity", {}),
+        "parameter_sensitivity": validation_outputs.get("parameter_sensitivity", {}),
+        "concentration_analysis": validation_outputs.get("concentration", {}),
+        "walk_forward_summary": validation_outputs.get("walk_forward", {}),
+        "critic_flags": selected.get("critic", {}).get("flags", []),
+    }

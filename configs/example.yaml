@@ -31,6 +31,7 @@ backtest:
   signal_timing: close
   execution_timing: next_open
   allow_same_bar_execution: false
+  force_liquidate_at_end: true
 
 costs:
   commission_bps: 1.5
@@ -62,7 +63,7 @@ research:
   hypothesis_dir: configs/hypotheses
   random_seed: 42
   min_trades: 1
-  feature_windows: [3, 5, 10, 20]
+  feature_windows: [3, 5, 10, 15, 20, 25]
   final_holdout_key: example-synthetic-holdout-v2
   allow_final_holdout_during_research: false
 
@@ -86,6 +87,7 @@ walk_forward:
 
 parameter_sensitivity:
   lookback_multipliers: [0.75, 1.0, 1.25]
+  threshold_multipliers: [0.8, 1.2]
 
 report:
   output_dir: outputs/reports

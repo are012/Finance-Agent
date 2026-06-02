@@ -25,6 +25,7 @@ def backtest_signals(
     initial_cash: float,
     cost_model: CostModel,
     liquidity_config: dict[str, Any] | None = None,
+    force_liquidate_at_end: bool = True,
 ) -> BacktestResult:
     data = _validated_bars_with_extras(bars)
     signal_frame = signals.copy()
@@ -136,7 +137,7 @@ def backtest_signals(
         position_rows.extend(_position_rows(date, positions, daily_bars))
         pending_targets = signal_by_date.get(pd.Timestamp(date), {})
 
-    if dates and positions:
+    if dates and positions and force_liquidate_at_end:
         last_date = dates[-1]
         last_bars = data[data["date"].eq(last_date)].set_index("symbol")
         for symbol, quantity in list(positions.items()):

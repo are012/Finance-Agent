@@ -3,6 +3,14 @@ source:
   input_paths:
     - data/sample/raw/krx_ohlcv_sample.csv
 
+status_files:
+  suspended:
+    - data/sample/raw/krx_suspended_sample.csv
+  delisted:
+    - data/sample/raw/krx_delisted_sample.csv
+  admin:
+    - data/sample/raw/krx_admin_sample.csv
+
 output:
   raw_dir: data/raw
   staging_dir: data/staging

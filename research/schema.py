@@ -46,7 +46,7 @@ def validate_ohlcv_frame(frame: pd.DataFrame, *, allowed_extra_columns: Iterable
         raise ValueError(f"Forbidden or unknown columns: {unknown}")
 
     validated = frame.copy()
-    decisions: list[str] = []
+    decisions: list[str] = list(frame.attrs.get("schema_decisions", []))
     validated["date"] = pd.to_datetime(validated["date"], errors="raise")
     validated["symbol"] = validated["symbol"].astype(str)
     validated["market"] = validated["market"].astype(str)

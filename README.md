@@ -48,7 +48,13 @@ Use the collection CLI to normalize local KRX CSV exports into the canonical OHL
 
 The default config reads the small sample raw file under `data/sample/raw/`, writes raw/staging/processed outputs under ignored `data/raw/`, `data/staging/`, and `data/processed/` directories, and creates a JSON manifest with input/output hashes, row counts, schema decisions, filters, source metadata, and listing-status counts.
 
+Optional `status_files` can merge separate local CSV or Parquet files for suspended, delisted, and admin-issue symbols into `listing_status`. Status files require `symbol` and may include `date`; dated rows update only matching `date`/`symbol` observations, while symbol-only rows update every observation for that symbol.
+
+Set `output.processed_filename` to `.csv` or `.parquet`, or set `output.processed_format`, to choose the processed output format. The manifest records the processed format and hash.
+
 The preferred reproducible source is `krx_csv`, because it works fully offline. Optional `pykrx` and `fdr` source modules are available for research convenience through lazy imports, but tests and CI do not require internet access or those packages.
+
+For optional `pykrx` and `fdr` convenience sources, configure `source.retry.attempts`, `source.retry.backoff_seconds`, and `source.rate_limit.sleep_seconds`. The manifest records requested, successful, empty, and failed symbols so partial remote collection does not hide missing data.
 
 The processed CSV can be used by setting `configs/example.yaml`:
 

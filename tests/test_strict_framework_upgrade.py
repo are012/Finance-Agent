@@ -1,15 +1,19 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
 import yaml
 
+from app.run_research import run_research
 from research.backtester import backtest_signals
 from research.costs import CostModel
 from research.critic import critique_experiment
-from research.hypothesis import load_hypothesis_spec
+from research.data_loader import load_config, load_configured_data
+from research.features import add_chart_features
+from research.hypothesis import generate_hypotheses, load_hypothesis_spec
 from research.ledger import ExperimentLedger
 from research.metrics import compute_metrics
 from research.schema import validate_ohlcv_frame
@@ -102,6 +106,88 @@ def test_yaml_hypothesis_spec_validates_chart_only_contract(tmp_path):
     assert hypothesis.hypothesis_id == "H-YAML"
     assert hypothesis.signal_family == "breakout_volume"
     assert hypothesis.to_strategy().parameters["volume_ratio_min"] == 1.5
+
+
+def test_sample_hypothesis_directory_and_builtin_family_names_match_spec():
+    sample_path = Path("configs/hypotheses/momentum_20.yaml")
+
+    hypothesis = load_hypothesis_spec(sample_path)
+    builtin_families = {candidate.signal_family for candidate in generate_hypotheses(20)}
+
+    assert hypothesis.hypothesis_id == "momentum_20"
+    assert hypothesis.signal_family == "momentum"
+    assert {
+        "breakout_volume",
+        "ma_trend",
+        "short_reversal",
+        "volatility_contraction_breakout",
+        "gap_continuation",
+        "gap_reversal",
+        "rsi_mean_reversion",
+        "price_volume_momentum",
+        "traded_value_momentum",
+    }.issubset(builtin_families)
+
+
+def test_all_builtin_hypotheses_use_example_config_feature_windows():
+    config = load_config("configs/example.yaml")
+    featured = add_chart_features(load_configured_data(config), windows=config["research"]["feature_windows"])
+    available_features = set(featured.columns)
+
+    for hypothesis in generate_hypotheses(20):
+        assert set(hypothesis.required_features).issubset(available_features), hypothesis.hypothesis_id
+
+
+def test_hypothesis_validation_rejects_missing_entry_or_exit_rules(tmp_path):
+    missing_entry = tmp_path / "missing_entry.yaml"
+    missing_entry.write_text(
+        yaml.safe_dump(
+            {
+                "id": "H-MISSING-ENTRY",
+                "idea": "A momentum idea without an entry rule is incomplete.",
+                "strategy_family": "momentum",
+                "parameters": {"lookback_bars": 20, "holding_bars": 3},
+                "features": ["momentum_20", "traded_value_ma_20"],
+                "exit_rule": {"holding_period_days": 3},
+            }
+        ),
+        encoding="utf-8",
+    )
+    missing_exit = tmp_path / "missing_exit.yaml"
+    missing_exit.write_text(
+        yaml.safe_dump(
+            {
+                "id": "H-MISSING-EXIT",
+                "idea": "A momentum idea without an exit rule is incomplete.",
+                "strategy_family": "momentum",
+                "parameters": {"lookback_bars": 20, "holding_bars": 3},
+                "features": ["momentum_20", "traded_value_ma_20"],
+                "entry_rule": {"expression": "momentum_20 > 0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="entry_rule"):
+        load_hypothesis_spec(missing_entry)
+    with pytest.raises(ValueError, match="exit_rule"):
+        load_hypothesis_spec(missing_exit)
+
+
+def test_research_loop_logs_invalid_hypothesis_and_continues(tmp_path):
+    config = yaml.safe_load(Path("configs/example.yaml").read_text(encoding="utf-8"))
+    config["hypotheses"] = {"paths": [str(tmp_path / "missing.yaml")], "include_builtin": False}
+    config["research"]["max_hypotheses"] = 1
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    ledger_path = run_research(config_path=config_path, output_dir=tmp_path / "outputs")
+
+    rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["status"] == "FAIL"
+    assert rows[0]["hypothesis_id"].startswith("INVALID-")
+    assert rows[0]["critic"]["flags"][0]["code"] == "INVALID_HYPOTHESIS"
 
 
 def test_backtester_rejects_orders_over_liquidity_cap():

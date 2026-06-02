@@ -47,6 +47,9 @@ def write_final_report(
     if selected is None:
         summary["critic_findings"].append("no experiments were found in the ledger")
         return _persist_report(summary, output_path, reused_lock=False)
+    if not selected.get("strategy"):
+        summary["critic_findings"].append("no executable validated strategy was found in the ledger")
+        return _persist_report(summary, output_path, reused_lock=False)
 
     holdout_key = _holdout_key(config, selected)
     holdout_file = output_path / f"holdout_{holdout_key}.json"

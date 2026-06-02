@@ -2,6 +2,7 @@
 
 __all__ = [
     "backtester",
+    "config",
     "costs",
     "critic",
     "data_loader",

@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from research.data_loader import load_config, load_configured_data
-from research.experiment import evaluate_hypothesis
+from research.experiment import evaluate_hypothesis, rejected_hypothesis_row
 from research.features import add_chart_features
 from research.hypothesis import load_hypotheses_from_config
 from research.ledger import ExperimentLedger
@@ -37,14 +37,17 @@ def run_research(*, config_path: str | Path, output_dir: str | Path) -> Path:
     hypotheses = load_hypotheses_from_config(config)
 
     for index, hypothesis in enumerate(hypotheses, start=1):
-        row = evaluate_hypothesis(
-            hypothesis=hypothesis,
-            split=split,
-            featured=featured,
-            config=config,
-            output_paths=paths,
-            sequence=index,
-        )
+        if getattr(hypothesis, "is_invalid", False):
+            row = rejected_hypothesis_row(hypothesis=hypothesis, config=config, sequence=index)
+        else:
+            row = evaluate_hypothesis(
+                hypothesis=hypothesis,
+                split=split,
+                featured=featured,
+                config=config,
+                output_paths=paths,
+                sequence=index,
+            )
         ledger.append(row)
         if row["status"] == "PASS":
             break

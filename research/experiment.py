@@ -102,6 +102,53 @@ def evaluate_hypothesis(
     }
 
 
+def rejected_hypothesis_row(
+    *,
+    hypothesis,
+    config: dict[str, Any],
+    sequence: int = 1,
+) -> dict[str, Any]:
+    reason = str(getattr(hypothesis, "error", None) or getattr(hypothesis, "rationale", "Invalid hypothesis"))
+    experiment_id = f"{utc_stamp()}-{sequence:03d}"
+    critic = {
+        "status": "reject",
+        "flags": [
+            {
+                "severity": "high",
+                "code": "INVALID_HYPOTHESIS",
+                "message": reason,
+            }
+        ],
+    }
+    return {
+        "experiment_id": experiment_id,
+        "hypothesis_id": getattr(hypothesis, "hypothesis_id", f"INVALID-{sequence:03d}"),
+        "hypothesis": hypothesis.to_dict() if hasattr(hypothesis, "to_dict") else {"error": reason},
+        "status": "FAIL",
+        "status_reason": reason,
+        "score": -1000000000000.0,
+        "strategy_family": None,
+        "strategy": None,
+        "train_metrics": {},
+        "validation_metrics": {},
+        "metrics": {},
+        "validation_trades": 0,
+        "critic": critic,
+        "critic_findings": [reason],
+        "validation_outputs": {"used_final_holdout": False},
+        "config_snapshot": _public_config(config),
+        "config_hash": stable_json_hash(_public_config(config)),
+        "data_hash": file_hash(config["data"]["path"]),
+        "git_hash": git_hash(),
+        "artifact_paths": {},
+        "artifacts": {},
+        "cost_assumptions": config.get("costs", {}),
+        "universe_filters": config.get("universe", {}),
+        "final_holdout_access": {"used_during_research": False, "evaluated": False},
+        "execution_model": "not_executed_invalid_hypothesis",
+    }
+
+
 def run_strategy_on_frame(frame, strategy: StrategySpec, config: dict[str, Any], *, cost_model: CostModel | None = None) -> BacktestResult:
     backtest_config = config.get("backtest", config.get("research", {}))
     return _evaluate(

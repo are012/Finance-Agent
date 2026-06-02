@@ -32,12 +32,19 @@ SUPPORTED_FAMILIES = {
     "reversal",
     "breakout_volume",
     "ma_trend",
+    "short_reversal",
     "volatility_contraction_breakout",
     "gap_continuation",
     "gap_reversal",
     "rsi_mean_reversion",
     "price_volume_momentum",
     "high_traded_value_momentum",
+    "traded_value_momentum",
+}
+
+FAMILY_ALIASES = {
+    "reversal": "short_reversal",
+    "high_traded_value_momentum": "traded_value_momentum",
 }
 
 
@@ -103,6 +110,26 @@ class Hypothesis:
         }
 
 
+@dataclass(frozen=True)
+class InvalidHypothesis:
+    hypothesis_id: str
+    name: str
+    rationale: str
+    error: str
+    source_path: str | None = None
+    is_invalid: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "hypothesis_id": self.hypothesis_id,
+            "name": self.name,
+            "rationale": self.rationale,
+            "error": self.error,
+            "source_path": self.source_path,
+            "invalid": True,
+        }
+
+
 def load_hypothesis_spec(path: str | Path) -> Hypothesis:
     spec_path = Path(path)
     raw = spec_path.read_text(encoding="utf-8")
@@ -116,21 +143,27 @@ def load_hypothesis_spec(path: str | Path) -> Hypothesis:
 def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = None) -> Hypothesis:
     parameters = dict(payload.get("parameters") or {})
     exit_rule = dict(payload.get("exit_rule") or {})
+    entry_rule = dict(payload.get("entry_rule") or {})
+    if not entry_rule:
+        raise ValueError("Hypothesis must define entry_rule")
+    if not exit_rule:
+        raise ValueError("Hypothesis must define exit_rule")
+    family = _canonical_family(str(payload.get("strategy_family", payload.get("family", payload.get("signal_family", "momentum")))))
     lookback = int(parameters.get("lookback_bars", payload.get("lookback_bars", 20)))
     holding = int(parameters.get("holding_bars", exit_rule.get("holding_period_days", payload.get("holding_bars", 5))))
-    features = list(payload.get("features") or _required_features(str(payload.get("family", payload.get("signal_family", "momentum"))), lookback))
+    features = list(payload.get("features") or _required_features(family, lookback))
     return Hypothesis(
         hypothesis_id=str(payload.get("id", payload.get("hypothesis_id", ""))).strip(),
         name=str(payload.get("name", payload.get("idea", "Unnamed chart-only hypothesis"))),
         rationale=str(payload.get("rationale", payload.get("idea", ""))),
-        signal_family=str(payload.get("family", payload.get("signal_family", "momentum"))),
+        signal_family=family,
         lookback_bars=lookback,
         holding_bars=holding,
         required_features=features,
         forbidden_features=list(payload.get("forbidden_features") or []),
         parameters=parameters,
         universe=dict(payload.get("universe") or {}),
-        entry_rule=dict(payload.get("entry_rule") or {}),
+        entry_rule=entry_rule,
         exit_rule=exit_rule,
         position_sizing=dict(payload.get("position_sizing") or {}),
         falsification=dict(payload.get("falsification") or {}),
@@ -138,22 +171,18 @@ def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = N
     )
 
 
-def load_hypotheses_from_config(config: dict[str, Any]) -> list[Hypothesis]:
+def load_hypotheses_from_config(config: dict[str, Any]) -> list[Hypothesis | InvalidHypothesis]:
     hypotheses = []
     for path in config.get("hypotheses", {}).get("paths", []) or []:
         try:
             hypotheses.append(load_hypothesis_spec(path))
         except Exception as exc:
             hypotheses.append(
-                Hypothesis(
+                InvalidHypothesis(
                     hypothesis_id=f"INVALID-{Path(path).stem}",
                     name=f"Invalid hypothesis spec: {path}",
                     rationale=str(exc),
-                    signal_family="momentum",
-                    lookback_bars=1,
-                    holding_bars=1,
-                    required_features=["momentum_1"],
-                    parameters={"invalid_reason": str(exc)},
+                    error=str(exc),
                     source_path=str(path),
                 )
             )
@@ -168,7 +197,7 @@ def generate_hypotheses(budget: int) -> list[Hypothesis]:
     specs = [
         ("momentum_20", "Liquid 20-bar momentum continuation", "momentum", 20, {"min_momentum": 0.0}),
         ("breakout_20", "20-bar high breakout continuation", "breakout", 20, {}),
-        ("reversal_5", "Short-term reversal after chart weakness", "reversal", 5, {}),
+        ("short_reversal_5", "Short-term reversal after chart weakness", "short_reversal", 5, {}),
         ("breakout_volume_20", "20-bar breakout with volume confirmation", "breakout_volume", 20, {"volume_ratio_min": 1.0}),
         ("ma_trend_20", "Moving-average trend following", "ma_trend", 20, {}),
         (
@@ -180,9 +209,9 @@ def generate_hypotheses(budget: int) -> list[Hypothesis]:
         ),
         ("gap_continuation_5", "Gap continuation", "gap_continuation", 5, {"min_gap": 0.005}),
         ("gap_reversal_5", "Gap reversal", "gap_reversal", 5, {"min_gap": 0.005}),
-        ("rsi_mean_reversion_14", "RSI mean reversion", "rsi_mean_reversion", 14, {"max_rsi": 35}),
+        ("rsi_mean_reversion_5", "RSI mean reversion", "rsi_mean_reversion", 5, {"max_rsi": 35}),
         ("price_volume_momentum_20", "Price-volume momentum", "price_volume_momentum", 20, {"volume_ratio_min": 1.0}),
-        ("high_traded_value_momentum_20", "High traded-value momentum", "high_traded_value_momentum", 20, {}),
+        ("traded_value_momentum_20", "Traded-value momentum", "traded_value_momentum", 20, {}),
     ]
     candidates = [
         Hypothesis(
@@ -194,6 +223,8 @@ def generate_hypotheses(budget: int) -> list[Hypothesis]:
             holding_bars=3,
             required_features=_required_features(family, lookback),
             parameters=parameters,
+            entry_rule={"description": name, "expression": _entry_expression(family, lookback)},
+            exit_rule={"description": "Exit after the configured holding period.", "holding_period_days": 3},
             position_sizing={"method": "equal_weight", "max_positions": 3, "max_position_pct": 1.0},
             falsification={"min_trades": 1},
         )
@@ -202,12 +233,17 @@ def generate_hypotheses(budget: int) -> list[Hypothesis]:
     return candidates[: max(0, budget)]
 
 
+def _canonical_family(family: str) -> str:
+    return FAMILY_ALIASES.get(family, family)
+
+
 def _required_features(family: str, lookback: int) -> list[str]:
+    family = _canonical_family(family)
     common = [f"traded_value_ma_{lookback}"]
     mapping = {
         "momentum": [f"momentum_{lookback}", *common],
         "breakout": [f"prior_high_{lookback}", f"high_breakout_{lookback}", *common],
-        "reversal": [f"reversal_{lookback}", *common],
+        "short_reversal": [f"reversal_{lookback}", *common],
         "breakout_volume": [f"prior_high_{lookback}", f"volume_ratio_{lookback}", *common],
         "ma_trend": [f"ma_{lookback}", f"ma_trend_{lookback}", *common],
         "volatility_contraction_breakout": [
@@ -220,6 +256,24 @@ def _required_features(family: str, lookback: int) -> list[str]:
         "gap_reversal": ["gap_return", f"reversal_{lookback}", *common],
         "rsi_mean_reversion": [f"rsi_{lookback}", *common],
         "price_volume_momentum": [f"momentum_{lookback}", f"volume_ratio_{lookback}", *common],
-        "high_traded_value_momentum": [f"momentum_{lookback}", *common],
+        "traded_value_momentum": [f"momentum_{lookback}", *common],
     }
     return mapping.get(family, common)
+
+
+def _entry_expression(family: str, lookback: int) -> str:
+    family = _canonical_family(family)
+    mapping = {
+        "momentum": f"momentum_{lookback} > 0",
+        "breakout": f"close > prior_high_{lookback}",
+        "short_reversal": f"reversal_{lookback} > 0",
+        "breakout_volume": f"close > prior_high_{lookback} and volume_ratio_{lookback} >= 1.0",
+        "ma_trend": f"close > ma_{lookback}",
+        "volatility_contraction_breakout": f"close > prior_high_{lookback} and range_contraction_{lookback} <= 1.0",
+        "gap_continuation": "gap_return >= 0.005",
+        "gap_reversal": "gap_return <= -0.005",
+        "rsi_mean_reversion": f"rsi_{lookback} <= 35",
+        "price_volume_momentum": f"momentum_{lookback} > 0 and volume_ratio_{lookback} >= 1.0",
+        "traded_value_momentum": f"momentum_{lookback} > 0",
+    }
+    return mapping.get(family, "chart_only_signal")

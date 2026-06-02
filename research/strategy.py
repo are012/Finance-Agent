@@ -75,7 +75,7 @@ def _select_daily(daily: pd.DataFrame, strategy: StrategySpec, *, max_positions:
         signal = f"prior_high_{lookback}"
         eligible = eligible[eligible["close"] > eligible[signal]]
         eligible = eligible.sort_values([liquid_column], ascending=False)
-    elif family == "reversal":
+    elif family in {"reversal", "short_reversal"}:
         signal = f"reversal_{lookback}"
         eligible = eligible[eligible[signal] > 0].sort_values([signal, liquid_column], ascending=False)
     elif family == "breakout_volume":
@@ -106,7 +106,7 @@ def _select_daily(daily: pd.DataFrame, strategy: StrategySpec, *, max_positions:
             (eligible[f"momentum_{lookback}"] > 0)
             & (eligible[f"volume_ratio_{lookback}"] >= float(params.get("volume_ratio_min", 1.0)))
         ].sort_values([f"momentum_{lookback}", f"volume_ratio_{lookback}", liquid_column], ascending=False)
-    elif family == "high_traded_value_momentum":
+    elif family in {"high_traded_value_momentum", "traded_value_momentum"}:
         eligible = eligible[eligible[f"momentum_{lookback}"] > 0].sort_values(
             [liquid_column, f"momentum_{lookback}"], ascending=False
         )

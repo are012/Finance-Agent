@@ -52,12 +52,14 @@ risk:
 
 hypotheses:
   paths:
-    - configs/sample_hypothesis.yaml
+    - configs/hypotheses/momentum_20.yaml
   include_builtin: true
 
 research:
   max_hypotheses: 8
   budget: 8
+  built_in_hypotheses: true
+  hypothesis_dir: configs/hypotheses
   random_seed: 42
   min_trades: 1
   feature_windows: [3, 5, 10, 20]

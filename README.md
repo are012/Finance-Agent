@@ -54,7 +54,7 @@ python3 -m venv .venv
 ```bash
 .venv/bin/python -m app.run_one_hypothesis \
   --config configs/example.yaml \
-  --hypothesis configs/sample_hypothesis.yaml \
+  --hypothesis configs/hypotheses/momentum_20.yaml \
   --output-dir outputs
 ```
 
@@ -86,7 +86,10 @@ outputs/ledger/experiments.jsonl
 ## Generate Final Report
 
 ```bash
-.venv/bin/python -m app.final_report --config configs/example.yaml --output-dir outputs/reports
+.venv/bin/python -m app.final_report \
+  --config configs/example.yaml \
+  --ledger outputs/ledger/experiments.jsonl \
+  --output-dir outputs/reports
 ```
 
 The final report selects the best validated candidate by risk-aware scoring and evaluates the final holdout exactly once. A `holdout_<key>.json` lock file is written in the report directory. Later report runs reuse the locked result and do not re-evaluate the holdout.
@@ -100,9 +103,9 @@ Report outputs:
 
 ## Hypothesis Format
 
-See `configs/sample_hypothesis.yaml`. Hypotheses must declare the strategy family, chart-only features, entry/exit rules, position sizing, cost assumptions, and falsification gates. Unsupported families and forbidden non-chart features are rejected before execution.
+See `configs/hypotheses/`. Hypotheses must declare the strategy family, chart-only features, entry/exit rules, position sizing, cost assumptions, and falsification gates. Unsupported families, missing entry/exit rules, and forbidden non-chart features are rejected before execution. Invalid hypotheses loaded by the research loop are written to the ledger with a rejection reason.
 
-Built-in strategy families include breakout, breakout with volume confirmation, moving-average trend, short-term reversal, volatility contraction breakout, gap continuation/reversal, RSI mean reversion, price-volume momentum, and high traded-value momentum.
+Built-in strategy families include breakout, breakout with volume confirmation, moving-average trend, short-term reversal, volatility contraction breakout, gap continuation/reversal, RSI mean reversion, price-volume momentum, and traded-value momentum.
 
 ## Final Holdout Rule
 

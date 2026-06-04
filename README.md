@@ -92,6 +92,80 @@ data:
   symbol_column: symbol
 ```
 
+## KRX Open API Collection
+
+Use `source.type: krx_openapi` when collecting official KRX Open API daily stock data. This source is research-only and currently supports the KOSPI and KOSDAQ daily trading-information APIs. Tests use mocked responses, so CI remains offline and does not require a KRX account.
+
+Keep the API key out of all files. Export it in your shell and point the config at the environment variable name:
+
+```bash
+export KRX_AUTH_KEY='replace-with-your-issued-key'
+```
+
+Example collection config:
+
+```yaml
+zero_row_policy: error
+
+source:
+  type: krx_openapi
+  start: "2024-01-02"
+  end: "2024-12-30"
+  markets: ["KOSPI", "KOSDAQ"]
+  auth_key_env: KRX_AUTH_KEY
+  endpoint_base_url: https://data-dbg.krx.co.kr/svc/apis/sto
+  response_format: json
+  market_endpoints:
+    KOSPI: stk_bydd_trd
+    KOSDAQ: ksq_bydd_trd
+  field_map:
+    date: BAS_DD
+    symbol: ISU_CD
+    name: ISU_NM
+    market: MKT_NM
+    security_type: SECT_TP_NM
+    open: TDD_OPNPRC
+    high: TDD_HGPRC
+    low: TDD_LWPRC
+    close: TDD_CLSPRC
+    volume: ACC_TRDVOL
+    traded_value: ACC_TRDVAL
+  cache:
+    enabled: true
+    dir: data/raw/krx_openapi_cache
+    refresh: false
+  retry:
+    attempts: 2
+    backoff_seconds: 1
+  rate_limit:
+    sleep_seconds: 0.2
+
+output:
+  raw_dir: data/raw
+  staging_dir: data/staging
+  processed_dir: data/processed
+  staging_filename: staging_ohlcv.csv
+  processed_filename: collected_ohlcv.csv
+  manifest_filename: manifest.json
+  research_config_filename: generated_research.yaml
+
+filters:
+  markets: ["KOSPI", "KOSDAQ"]
+  exclude_listing_statuses: []
+```
+
+Run collection with the same CLI:
+
+```bash
+.venv/bin/python -m app.collect_data --config configs/data_collection_krx_openapi.yaml
+```
+
+The manifest records the provider, requested dates and markets, retry/rate-limit settings, empty or failed requests, and data-quality artifacts. It stores only `auth_key_env`, never the API key value. For production refresh jobs, keep `zero_row_policy: error` so missing approval, expired keys, or empty remote responses fail fast instead of producing a misleading empty dataset.
+
+`market_endpoints` and `field_map` are configurable so the collector can adapt if KRX changes endpoint IDs or response field names. Keep mapped fields inside the allowed OHLCV/local-metadata schema. The optional cache stores provider response JSON under `source.cache.dir`; it does not store request headers or the API key. Set `source.cache.refresh: true` only when you intentionally want to replace cached responses with fresh KRX responses.
+
+When `output.research_config_filename` is set, the generated config keeps `research.allow_final_holdout_during_research: false`. Inspect `data/processed/manifest.json`, `data/processed/data_quality_report.json`, and generated split guidance before running research.
+
 ## Setup
 
 ```bash

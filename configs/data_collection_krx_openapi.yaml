@@ -1,0 +1,51 @@
+zero_row_policy: error
+
+source:
+  type: krx_openapi
+  start: "2024-01-02"
+  end: "2024-12-30"
+  markets: ["KOSPI", "KOSDAQ"]
+  auth_key_env: KRX_AUTH_KEY
+  endpoint_base_url: https://data-dbg.krx.co.kr/svc/apis/sto
+  response_format: json
+  market_endpoints:
+    KOSPI: stk_bydd_trd
+    KOSDAQ: ksq_bydd_trd
+  field_map:
+    date: BAS_DD
+    symbol: ISU_CD
+    name: ISU_NM
+    market: MKT_NM
+    security_type: SECT_TP_NM
+    open: TDD_OPNPRC
+    high: TDD_HGPRC
+    low: TDD_LWPRC
+    close: TDD_CLSPRC
+    volume: ACC_TRDVOL
+    traded_value: ACC_TRDVAL
+  cache:
+    enabled: true
+    dir: data/raw/krx_openapi_cache
+    refresh: false
+  retry:
+    attempts: 2
+    backoff_seconds: 1
+  rate_limit:
+    sleep_seconds: 0.2
+
+output:
+  raw_dir: data/raw
+  staging_dir: data/staging
+  processed_dir: data/processed
+  staging_filename: staging_ohlcv.csv
+  processed_filename: collected_ohlcv.csv
+  manifest_filename: manifest.json
+  research_config_filename: generated_research.yaml
+
+filters:
+  markets: ["KOSPI", "KOSDAQ"]
+  exclude_listing_statuses: []
+
+metadata:
+  dataset_id: krx-openapi-ohlcv
+  notes: "Official KRX Open API daily OHLCV collection; API key is read only from source.auth_key_env."

@@ -11,12 +11,13 @@ import yaml
 
 from research.data_sources.fdr import collect_fdr_ohlcv
 from research.data_sources.krx_csv import collect_krx_csv
+from research.data_sources.krx_openapi import collect_krx_openapi_ohlcv
 from research.data_sources.pykrx import collect_pykrx_ohlcv
 from research.reporting import FORBIDDEN_DATA
 from research.schema import ALLOWED_COLUMNS, REQUIRED_COLUMNS, apply_universe_filters, validate_ohlcv_frame
 from research.utils import file_hash, git_hash, utc_stamp
 
-SOURCE_TYPES = {"krx_csv", "pykrx", "fdr"}
+SOURCE_TYPES = {"krx_csv", "pykrx", "fdr", "krx_openapi"}
 PROCESSED_FORMATS = {"csv", "parquet"}
 STATUS_FILE_STATUSES = {"delisted", "admin", "suspended"}
 DEFAULT_STATUS_PRECEDENCE = ["admin", "suspended", "delisted"]
@@ -151,6 +152,8 @@ def _validate_collection_config(config: dict[str, Any]) -> None:
             raise ValueError("source.input_paths must include at least one local KRX CSV file")
         for path_value in input_paths:
             _require_existing_file(path_value, "source.input_paths")
+    elif source_type == "krx_openapi":
+        _validate_krx_openapi_source(source)
     else:
         symbols = source.get("symbols", [])
         if not isinstance(symbols, list) or not symbols:
@@ -199,7 +202,88 @@ def _collect_source(source: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any
         return _collect_remote_source(source, collect_pykrx_ohlcv)
     if source_type == "fdr":
         return _collect_remote_source(source, collect_fdr_ohlcv)
+    if source_type == "krx_openapi":
+        return _collect_krx_openapi_source(source)
     raise ValueError(f"Unsupported data source type: {source_type}")
+
+
+def _validate_krx_openapi_source(source: dict[str, Any]) -> None:
+    forbidden_key_fields = {"auth_key", "api_key", "AUTH_KEY"}
+    configured_forbidden = sorted(forbidden_key_fields & set(source))
+    if configured_forbidden:
+        raise ValueError(f"KRX OpenAPI keys must not be stored in config; set source.auth_key_env instead of {configured_forbidden}")
+    if "start" not in source or "end" not in source:
+        raise ValueError("source.start and source.end are required for krx_openapi")
+    start = pd.Timestamp(str(source["start"]))
+    end = pd.Timestamp(str(source["end"]))
+    if start > end:
+        raise ValueError("source.start must be <= source.end")
+    markets = source.get("markets", [])
+    if not isinstance(markets, list) or not markets:
+        raise ValueError("source.markets must include KOSPI and/or KOSDAQ for krx_openapi")
+    valid_markets = {"KOSPI", "KOSDAQ"}
+    normalized = {str(market).strip().upper() for market in markets}
+    invalid = sorted(normalized - valid_markets)
+    if invalid:
+        raise ValueError(f"Unsupported krx_openapi markets: {invalid}")
+    auth_key_env = str(source.get("auth_key_env", "KRX_AUTH_KEY")).strip()
+    if not auth_key_env:
+        raise ValueError("source.auth_key_env must name the environment variable containing the KRX OpenAPI key")
+    for key in ("market_endpoints", "field_map"):
+        if key in source and not isinstance(source[key], dict):
+            raise ValueError(f"source.{key} must be a mapping for krx_openapi")
+    cache = source.get("cache", {}) or {}
+    if not isinstance(cache, dict):
+        raise ValueError("source.cache must be a mapping for krx_openapi")
+    timeout = float(source.get("timeout_seconds", 30))
+    if timeout <= 0:
+        raise ValueError("source.timeout_seconds must be > 0")
+
+
+def _collect_krx_openapi_source(source: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any]]:
+    retry = _retry_config(source)
+    rate_limit = _rate_limit_config(source)
+    frame = collect_krx_openapi_ohlcv(
+        start=str(source["start"]),
+        end=str(source["end"]),
+        markets=list(source.get("markets", [])),
+        auth_key_env=str(source.get("auth_key_env", "KRX_AUTH_KEY")),
+        endpoint_base_url=str(source.get("endpoint_base_url", "https://data-dbg.krx.co.kr/svc/apis/sto")),
+        response_format=str(source.get("response_format", "json")),
+        market_endpoints=source.get("market_endpoints"),
+        field_map=source.get("field_map"),
+        cache_dir=_krx_openapi_cache_dir(source),
+        cache_refresh=bool((source.get("cache", {}) or {}).get("refresh", False)),
+        timeout_seconds=float(source.get("timeout_seconds", 30)),
+        retry_attempts=int(retry["attempts"]),
+        retry_backoff_seconds=float(retry["backoff_seconds"]),
+        rate_limit_sleep_seconds=float(rate_limit["sleep_seconds"]),
+    )
+    metadata = dict(frame.attrs.get("krx_openapi", {}))
+    return frame, {
+        "source_type": "krx_openapi",
+        "requested_symbols": [],
+        "successful_symbols": [],
+        "empty_symbols": [],
+        "failed_symbols": [],
+        "requested_dates": list(metadata.get("requested_dates", [])),
+        "requested_markets": list(metadata.get("requested_markets", [])),
+        "successful_requests": list(metadata.get("successful_requests", [])),
+        "empty_requests": list(metadata.get("empty_requests", [])),
+        "failed_requests": list(metadata.get("failed_requests", [])),
+        "skipped_rows": int(metadata.get("skipped_rows", 0)),
+        "cache_hits": list(metadata.get("cache_hits", [])),
+        "cache_writes": list(metadata.get("cache_writes", [])),
+        "retry": retry,
+        "rate_limit": rate_limit,
+    }
+
+
+def _krx_openapi_cache_dir(source: dict[str, Any]) -> str | Path | None:
+    cache = source.get("cache", {}) or {}
+    if not cache or not bool(cache.get("enabled", False)):
+        return None
+    return cache.get("dir", "data/raw/krx_openapi_cache")
 
 
 def _collect_remote_source(source: dict[str, Any], collector) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -866,7 +950,36 @@ def _source_manifest(source: dict[str, Any]) -> dict[str, Any]:
                 "warnings": ["FDR source estimates traded_value as close * volume because provider output lacks traded_value."],
             }
         )
+    elif source_type == "krx_openapi":
+        base.update(
+            {
+                "provider_name": "KRX Open API",
+                "provider_mode": "official_remote_research_data",
+                "auth_key_env": str(source.get("auth_key_env", "KRX_AUTH_KEY")),
+                "endpoint_base_url": str(source.get("endpoint_base_url", "https://data-dbg.krx.co.kr/svc/apis/sto")),
+                "response_format": str(source.get("response_format", "json")),
+                "market_endpoints": dict(source.get("market_endpoints", {})),
+                "field_map": dict(source.get("field_map", {})),
+                "cache": _krx_openapi_cache_manifest(source),
+                "adjusted_close_policy": "raw_close_copied_to_adjusted_close",
+                "traded_value_policy": "uses_provider_traded_value",
+                "listing_status_policy": "defaults to listed unless separate local status_files are configured",
+                "warnings": [
+                    "KRX OpenAPI collection is remote and not CI/offline reproducible; tests use mocked responses.",
+                    "KRX OpenAPI auth key values are read only from the configured environment variable and are not stored in manifests.",
+                ],
+            }
+        )
     return base
+
+
+def _krx_openapi_cache_manifest(source: dict[str, Any]) -> dict[str, Any]:
+    cache = source.get("cache", {}) or {}
+    return {
+        "enabled": bool(cache.get("enabled", False)),
+        "dir": str(cache.get("dir", "data/raw/krx_openapi_cache")) if cache.get("enabled", False) else None,
+        "refresh": bool(cache.get("refresh", False)),
+    }
 
 
 def _manifest(

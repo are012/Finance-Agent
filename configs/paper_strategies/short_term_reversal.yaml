@@ -1,0 +1,43 @@
+id: paper_short_term_reversal
+name: Paper-inspired short-term reversal
+source_type: paper_inspired
+paper_id: SHORT_TERM_REVERSAL
+paper_reference:
+  title: "Evidence of Predictable Behavior of Security Returns"
+  authors: ["Jegadeesh"]
+  year: 1990
+  needs_verification: true
+idea: "Rank recent chart weakness for short-horizon mean reversion in liquid names."
+strategy_family: formula_rank
+features:
+  - reversal_5
+  - traded_value_ma_5
+formula:
+  score: "rank(reversal_5) + rank(traded_value_ma_5)"
+  entry: "reversal_5 > 0 and traded_value_ma_5 >= 100000"
+parameters:
+  lookback_bars: 5
+  holding_bars: 5
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 5
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "reversal_5", "traded_value_ma_5"]
+  allowed: ["local OHLCV", "short-term reversal", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Uses the existing reversal_5 feature as a chart-only proxy for recent weakness."
+implementation_caveats:
+  - "Short-term reversal can be turnover-heavy and must pass cost sensitivity."
+  - "This is paper-inspired and not exact replication."

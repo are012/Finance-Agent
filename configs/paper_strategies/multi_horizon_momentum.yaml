@@ -1,0 +1,46 @@
+id: paper_multi_horizon_momentum
+name: Paper-inspired multi-horizon momentum
+source_type: paper_inspired
+paper_id: MULTI_HORIZON_MOMENTUM
+paper_reference:
+  title: "Multi-horizon trend and momentum literature"
+  authors: ["Multiple"]
+  year: 0
+  needs_verification: true
+idea: "Require agreement across short, medium, and long chart momentum windows."
+strategy_family: formula_rank
+features:
+  - momentum_20
+  - momentum_60
+  - momentum_120
+  - multi_horizon_momentum_agreement
+  - traded_value_ma_20
+formula:
+  score: "rank(momentum_20) + rank(momentum_60) + rank(momentum_120)"
+  entry: "multi_horizon_momentum_agreement >= 0.67 and traded_value_ma_20 >= 100000"
+parameters:
+  lookback_bars: 120
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_20", "momentum_60", "momentum_120", "multi_horizon_momentum_agreement", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "chart-derived momentum", "multi-horizon agreement", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Requires at least two of the 20, 60, and 120-bar momentum windows to be positive."
+implementation_caveats:
+  - "This is paper-inspired and should be compared against AI-generated formula hypotheses under the same gates."
+  - "Agreement thresholds are implementation choices and must be validated."

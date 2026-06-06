@@ -1,0 +1,43 @@
+id: paper_fifty_two_week_high_momentum
+name: Paper-inspired 52-week-high momentum
+source_type: paper_inspired
+paper_id: FIFTY_TWO_WEEK_HIGH_MOMENTUM
+paper_reference:
+  title: "The 52-Week High and Momentum Investing"
+  authors: ["George", "Hwang"]
+  year: 2004
+  needs_verification: true
+idea: "Rank names by proximity to prior 52-week high using only chart-derived features."
+strategy_family: formula_rank
+features:
+  - distance_to_52w_high
+  - traded_value_ma_20
+formula:
+  score: "rank(distance_to_52w_high) + rank(traded_value_ma_20)"
+  entry: "distance_to_52w_high >= -0.05 and traded_value_ma_20 >= 100000"
+parameters:
+  lookback_bars: 252
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "prior_high_252", "distance_to_52w_high", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "prior high", "52-week high distance", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Uses prior_high_252, shifted by one bar, to avoid using same-bar highs as prior context."
+implementation_caveats:
+  - "This is paper-inspired and not exact replication of the paper's original portfolio construction."
+  - "The KRX universe and long-only constraints may alter behavior."

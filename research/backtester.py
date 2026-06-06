@@ -222,7 +222,8 @@ def _apply_liquidity_limit(
         return requested_quantity, "filled", ""
     lookback = int(liquidity_config.get("avg_traded_value_lookback", 20))
     traded_column = f"traded_value_ma_{lookback}"
-    avg_traded_value = float(row.get(traded_column, row.get("traded_value", 0.0)) or 0.0)
+    raw_avg_traded_value = row.get(traded_column, row.get("traded_value", 0.0))
+    avg_traded_value = 0.0 if pd.isna(raw_avg_traded_value) else float(raw_avg_traded_value)
     cap_value = avg_traded_value * float(max_pct)
     requested_value = requested_quantity * open_price
     if requested_value <= cap_value:

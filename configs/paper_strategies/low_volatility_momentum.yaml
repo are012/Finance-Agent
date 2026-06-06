@@ -1,0 +1,44 @@
+id: paper_low_volatility_momentum
+name: Paper-inspired low-volatility momentum
+source_type: paper_inspired
+paper_id: LOW_VOLATILITY_MOMENTUM
+paper_reference:
+  title: "Low volatility and momentum anomaly literature"
+  authors: ["Ang", "Hodrick", "Xing", "Zhang", "Blitz", "van Vliet"]
+  year: 2006
+  needs_verification: true
+idea: "Prefer positive medium-horizon momentum names with lower realized chart volatility."
+strategy_family: formula_rank
+features:
+  - momentum_120
+  - volatility_120
+  - traded_value_ma_20
+formula:
+  score: "rank(momentum_120) + rank(-volatility_120) + rank(traded_value_ma_20)"
+  entry: "momentum_120 > 0 and traded_value_ma_20 >= 100000"
+parameters:
+  lookback_bars: 120
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_120", "volatility_120", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "chart-derived momentum", "rolling volatility", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Combines positive chart momentum with a lower realized volatility rank."
+implementation_caveats:
+  - "This is a conservative paper-inspired combination, not an exact anomaly replication."
+  - "Volatility window and holding period must be validated under KRX costs."

@@ -93,6 +93,9 @@ def evaluate_hypothesis(
             gates=config.get("validation_gates", {}),
         ),
     }
+    formula_outputs = _formula_outputs(strategy)
+    if formula_outputs:
+        validation_outputs["formula"] = formula_outputs
     critic = critique_experiment(
         hypothesis_id=hypothesis.hypothesis_id,
         feature_columns=list(featured.columns),
@@ -130,6 +133,7 @@ def evaluate_hypothesis(
         "critic": critic,
         "critic_findings": [flag["message"] for flag in critic["flags"]],
         "validation_outputs": validation_outputs,
+        "tested_formula_count": 1 if formula_outputs else 0,
         "config_snapshot": _public_config(config),
         "config_hash": stable_json_hash(_public_config(config)),
         "data_hash": file_hash(config["data"]["path"]),
@@ -541,7 +545,7 @@ def _write_artifacts(*, output_paths, experiment_id, train_result, validation_re
 
 
 def _strategy_dict(strategy: StrategySpec) -> dict[str, Any]:
-    return {
+    payload = {
         "hypothesis_id": strategy.hypothesis_id,
         "name": strategy.name,
         "signal_family": strategy.signal_family,
@@ -550,6 +554,22 @@ def _strategy_dict(strategy: StrategySpec) -> dict[str, Any]:
         "required_features": strategy.required_features,
         "parameters": strategy.parameters,
         "max_position_pct": strategy.max_position_pct,
+    }
+    if strategy.formula:
+        payload["formula"] = {
+            **strategy.formula_metadata,
+            "expressions": strategy.formula,
+        }
+    return payload
+
+
+def _formula_outputs(strategy: StrategySpec) -> dict[str, Any]:
+    if not strategy.formula:
+        return {}
+    return {
+        **strategy.formula_metadata,
+        "strategy_family": strategy.signal_family,
+        "expressions": strategy.formula,
     }
 
 

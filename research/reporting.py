@@ -166,6 +166,8 @@ def _strategy_from_row(row: dict[str, Any]) -> StrategySpec:
         required_features=list(strategy["required_features"]),
         parameters=dict(strategy.get("parameters") or {}),
         max_position_pct=float(strategy.get("max_position_pct", 0.2)),
+        formula=dict((strategy.get("formula") or {}).get("expressions") or {}),
+        formula_metadata={key: value for key, value in dict(strategy.get("formula") or {}).items() if key != "expressions"},
     )
 
 

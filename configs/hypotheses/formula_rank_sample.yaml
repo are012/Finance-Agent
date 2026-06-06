@@ -1,0 +1,30 @@
+id: formula_rank_sample
+name: Simple formula rank momentum and liquidity
+idea: "A simple rank of chart momentum and volume confirmation may identify liquid continuation candidates."
+strategy_family: formula_rank
+features:
+  - momentum_5
+  - volume_ratio_5
+  - traded_value_ma_5
+formula:
+  score: "rank(momentum_5) + rank(volume_ratio_5)"
+  entry: "momentum_5 > 0 and traded_value_ma_5 >= 100000"
+  exit: "momentum_5 < 0"
+parameters:
+  lookback_bars: 5
+  holding_bars: 3
+position_sizing:
+  method: equal_weight
+  max_positions: 3
+  max_position_pct: 0.34
+cost_model:
+  commission_bps: 1.5
+  sell_tax_bps: 20
+  slippage_bps: 5
+falsification:
+  min_trades: 1
+  min_validation_cagr: -1.0
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+notes:
+  - "Keep the formula intentionally simple; formula search increases overfitting risk."

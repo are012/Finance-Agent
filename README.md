@@ -206,6 +206,15 @@ The second final-report command must reuse the locked final-holdout result rathe
 
 This validates the YAML hypothesis, runs train and validation backtests only, applies gates and critic checks, writes ledger rows, and saves artifacts.
 
+A safe chart-only formula hypothesis can be run the same way:
+
+```bash
+.venv/bin/python -m app.run_one_hypothesis \
+  --config configs/example.yaml \
+  --hypothesis configs/hypotheses/formula_rank_sample.yaml \
+  --output-dir outputs
+```
+
 ## Run Research Loop
 
 ```bash
@@ -256,6 +265,45 @@ See `configs/hypotheses/`. Hypotheses must declare the strategy family, chart-on
 Forbidden-data validation checks the full hypothesis spec fields that can affect research decisions, including feature lists, `entry_rule`, `parameters`, and `notes`.
 
 Built-in strategy families include breakout, breakout with volume confirmation, moving-average trend, short-term reversal, volatility contraction breakout, gap continuation/reversal, RSI mean reversion, price-volume momentum, and traded-value momentum.
+
+Formula strategy families are also supported for controlled research:
+
+- `formula_rank`: ranks eligible symbols by a safe chart-only `formula.score`.
+- `formula_rule`: enters eligible symbols from a boolean `formula.entry`.
+
+Formula hypotheses must declare every referenced feature in `features`. The engine validates expressions before backtesting and rejects forbidden terms, undeclared or unavailable features, unsupported operators, excessive depth, excessive features, excessive constants, and duplicate formulas loaded in the same research config.
+
+Allowed DSL syntax is intentionally small:
+
+- arithmetic: `+`, `-`, `*`, `/`
+- comparisons: `>`, `>=`, `<`, `<=`, `==`, `!=`
+- boolean logic: `and`, `or`, `not`
+- functions: `rank(x)`, `zscore(x, window)`, `clip(x, low, high)`, `abs(x)`
+
+Example:
+
+```yaml
+id: formula_rank_sample
+name: Simple formula rank momentum and liquidity
+strategy_family: formula_rank
+features:
+  - momentum_5
+  - volume_ratio_5
+  - traded_value_ma_5
+formula:
+  score: "rank(momentum_5) + rank(volume_ratio_5)"
+  entry: "momentum_5 > 0 and traded_value_ma_5 >= 100000"
+  exit: "momentum_5 < 0"
+parameters:
+  lookback_bars: 5
+  holding_bars: 3
+position_sizing:
+  method: equal_weight
+  max_positions: 3
+  max_position_pct: 0.34
+```
+
+The formula DSL never evaluates arbitrary Python. It does not allow imports, attribute access, file or network access, broker/account data, final-holdout access, or non-chart data such as fundamentals, news, disclosures, macro data, investor-flow data, or order-book data. Formula search increases overfitting risk; keep formulas simple, require walk-forward/cost/parameter checks, and treat high-scoring formulas as research candidates only.
 
 ## Final Holdout Rule
 

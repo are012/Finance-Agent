@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from research.formula import evaluate_formula_frame
+
 
 @dataclass(frozen=True)
 class StrategySpec:
@@ -16,6 +18,8 @@ class StrategySpec:
     required_features: list[str]
     parameters: dict[str, Any] = field(default_factory=dict)
     max_position_pct: float = 0.2
+    formula: dict[str, Any] = field(default_factory=dict)
+    formula_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def build_signals(featured: pd.DataFrame, strategy: StrategySpec, *, max_positions: int = 5) -> pd.DataFrame:
@@ -24,6 +28,11 @@ def build_signals(featured: pd.DataFrame, strategy: StrategySpec, *, max_positio
             raise ValueError(f"Missing required feature for strategy: {feature}")
 
     frame = featured.copy()
+    if strategy.signal_family in {"formula_rank", "formula_rule"}:
+        formula_values = evaluate_formula_frame(frame, strategy.formula, declared_features=strategy.required_features)
+        frame["__formula_score"] = formula_values.score
+        frame["__formula_entry"] = formula_values.entry
+        frame["__formula_exit"] = formula_values.exit
     selected_frames = []
     active_until: dict[str, int] = {}
     grouped = list(frame.groupby("date", sort=True))
@@ -31,6 +40,10 @@ def build_signals(featured: pd.DataFrame, strategy: StrategySpec, *, max_positio
         expired = {symbol for symbol, until in active_until.items() if until < index}
         for symbol in expired:
             active_until.pop(symbol, None)
+        if strategy.signal_family in {"formula_rank", "formula_rule"} and "__formula_exit" in daily.columns:
+            exit_symbols = set(daily.loc[daily["__formula_exit"].fillna(False), "symbol"])
+            for symbol in exit_symbols:
+                active_until.pop(symbol, None)
 
         selected = _select_daily(daily.copy(), strategy, max_positions=max_positions)
         selected_symbols = list(selected["symbol"]) if not selected.empty else []
@@ -67,7 +80,9 @@ def _select_daily(daily: pd.DataFrame, strategy: StrategySpec, *, max_positions:
     params = strategy.parameters
     family = strategy.signal_family
 
-    if family == "momentum":
+    if family in {"formula_rank", "formula_rule"}:
+        eligible = _select_formula_daily(eligible, strategy, liquid_column=liquid_column, max_positions=max_positions)
+    elif family == "momentum":
         signal = f"momentum_{lookback}"
         eligible = eligible[eligible[signal] > float(params.get("min_momentum", 0.0))]
         eligible = eligible.sort_values([signal, liquid_column], ascending=False)
@@ -113,4 +128,17 @@ def _select_daily(daily: pd.DataFrame, strategy: StrategySpec, *, max_positions:
     else:
         raise ValueError(f"Unsupported signal family: {family}")
 
+    return eligible.head(max_positions)
+
+
+def _select_formula_daily(daily: pd.DataFrame, strategy: StrategySpec, *, liquid_column: str, max_positions: int) -> pd.DataFrame:
+    params = strategy.parameters
+    min_traded_value = params.get("min_traded_value")
+    eligible = daily[daily["__formula_entry"].fillna(False)].copy()
+    if min_traded_value is not None:
+        eligible = eligible[eligible[liquid_column] >= float(min_traded_value)]
+    if strategy.signal_family == "formula_rank":
+        eligible = eligible.sort_values(["__formula_score", liquid_column], ascending=False)
+    else:
+        eligible = eligible.sort_values([liquid_column], ascending=False)
     return eligible.head(max_positions)

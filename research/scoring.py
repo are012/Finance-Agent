@@ -20,6 +20,9 @@ def score_candidate(metrics: dict, *, validation_outputs: dict | None = None, ga
         score -= (min_trades - metrics.get("trade_count", 0.0)) * 2.0
     concentration = validation_outputs.get("concentration", {})
     score -= 10.0 * _clip(concentration.get("max_symbol_pnl_share", 0.0), 0.0, 1.0)
+    formula = validation_outputs.get("formula", {})
+    if formula:
+        score -= 0.25 * _clip(formula.get("complexity_score", 0.0), 0.0, 100.0)
     return float(score)
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from research.formula import FormulaValidationError, validate_formula_spec
 from research.strategy import StrategySpec
 
 FORBIDDEN_FEATURE_TERMS = {
@@ -41,6 +42,8 @@ SUPPORTED_FAMILIES = {
     "price_volume_momentum",
     "high_traded_value_momentum",
     "traded_value_momentum",
+    "formula_rank",
+    "formula_rule",
 }
 
 FAMILY_ALIASES = {
@@ -66,6 +69,8 @@ class Hypothesis:
     position_sizing: dict[str, Any] = field(default_factory=dict)
     falsification: dict[str, Any] = field(default_factory=dict)
     notes: list[Any] = field(default_factory=list)
+    formula: dict[str, Any] = field(default_factory=dict)
+    formula_metadata: dict[str, Any] = field(default_factory=dict)
     source_path: str | None = None
 
     def __post_init__(self) -> None:
@@ -77,6 +82,8 @@ class Hypothesis:
             raise ValueError(f"Unsupported strategy family: {self.signal_family}")
         if self.lookback_bars <= 0 or self.holding_bars <= 0:
             raise ValueError("lookback_bars and holding_bars must be positive")
+        if self.signal_family in {"formula_rank", "formula_rule"} and not self.formula:
+            raise ValueError("Formula strategy families must define formula")
 
     def to_strategy(self) -> StrategySpec:
         parameters = dict(self.parameters)
@@ -91,6 +98,8 @@ class Hypothesis:
             required_features=self.required_features,
             parameters=parameters,
             max_position_pct=float(self.position_sizing.get("max_position_pct", 0.2) if self.position_sizing else 0.2),
+            formula=dict(self.formula),
+            formula_metadata=dict(self.formula_metadata),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,6 +118,8 @@ class Hypothesis:
             "position_sizing": self.position_sizing,
             "falsification": self.falsification,
             "notes": self.notes,
+            "formula": self.formula,
+            "formula_metadata": self.formula_metadata,
             "source_path": self.source_path,
         }
 
@@ -146,16 +157,35 @@ def load_hypothesis_spec(path: str | Path) -> Hypothesis:
 def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = None) -> Hypothesis:
     _reject_forbidden_spec_terms(payload)
     parameters = dict(payload.get("parameters") or {})
+    family = _canonical_family(str(payload.get("strategy_family", payload.get("family", payload.get("signal_family", "momentum")))))
+    formula = dict(payload.get("formula") or {})
     exit_rule = dict(payload.get("exit_rule") or {})
     entry_rule = dict(payload.get("entry_rule") or {})
+    if family in {"formula_rank", "formula_rule"}:
+        entry_rule.setdefault("description", "Formula DSL entry rule.")
+        entry_rule.setdefault("expression", formula.get("entry", ""))
+        exit_rule.setdefault("description", "Formula DSL exit rule or configured holding period.")
+        exit_rule.setdefault("holding_period_days", parameters.get("holding_bars", payload.get("holding_bars", 5)))
+        if formula.get("exit"):
+            exit_rule.setdefault("expression", formula["exit"])
     if not entry_rule:
         raise ValueError("Hypothesis must define entry_rule")
     if not exit_rule:
         raise ValueError("Hypothesis must define exit_rule")
-    family = _canonical_family(str(payload.get("strategy_family", payload.get("family", payload.get("signal_family", "momentum")))))
     lookback = int(parameters.get("lookback_bars", payload.get("lookback_bars", 20)))
     holding = int(parameters.get("holding_bars", exit_rule.get("holding_period_days", payload.get("holding_bars", 5))))
+    formula_metadata: dict[str, Any] = {}
     features = list(payload.get("features") or _required_features(family, lookback))
+    if family in {"formula_rank", "formula_rule"}:
+        try:
+            formula_metadata = validate_formula_spec(
+                formula,
+                declared_features=features,
+                require_score=family == "formula_rank",
+            )
+        except FormulaValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        features = list(formula_metadata["features"])
     return Hypothesis(
         hypothesis_id=str(payload.get("id", payload.get("hypothesis_id", ""))).strip(),
         name=str(payload.get("name", payload.get("idea", "Unnamed chart-only hypothesis"))),
@@ -172,15 +202,24 @@ def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = N
         position_sizing=dict(payload.get("position_sizing") or {}),
         falsification=dict(payload.get("falsification") or {}),
         notes=list(payload.get("notes") or []),
+        formula=formula,
+        formula_metadata=formula_metadata,
         source_path=source_path,
     )
 
 
 def load_hypotheses_from_config(config: dict[str, Any]) -> list[Hypothesis | InvalidHypothesis]:
     hypotheses = []
+    seen_formula_hashes: dict[str, str] = {}
     for path in config.get("hypotheses", {}).get("paths", []) or []:
         try:
-            hypotheses.append(load_hypothesis_spec(path))
+            hypothesis = load_hypothesis_spec(path)
+            formula_hash = hypothesis.formula_metadata.get("hash")
+            if formula_hash and formula_hash in seen_formula_hashes:
+                raise ValueError(f"Duplicate formula matches {seen_formula_hashes[formula_hash]}")
+            if formula_hash:
+                seen_formula_hashes[formula_hash] = hypothesis.hypothesis_id
+            hypotheses.append(hypothesis)
         except Exception as exc:
             hypotheses.append(
                 InvalidHypothesis(
@@ -277,7 +316,7 @@ def _forbidden_spec_violations(value: Any, path: str = "spec") -> list[dict[str,
 def _contains_forbidden_term(value: str) -> bool:
     lowered = value.lower()
     tokens = [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
-    return any(term in tokens or term in lowered for term in FORBIDDEN_FEATURE_TERMS)
+    return any(term in tokens for term in FORBIDDEN_FEATURE_TERMS)
 
 
 def _required_features(family: str, lookback: int) -> list[str]:

@@ -83,6 +83,9 @@ def critique_experiment(
         flags.append(_flag("medium", "PARAMETER_FRAGILITY", "Parameter sensitivity check did not pass."))
     if validation_outputs.get("walk_forward", {}).get("passed") is False:
         flags.append(_flag("medium", "WALK_FORWARD_FAIL", "Walk-forward validation did not pass across research windows."))
+    formula = validation_outputs.get("formula", {})
+    if formula and int(formula.get("complexity_score", 0) or 0) > int(gates.get("max_formula_complexity", 40)):
+        flags.append(_flag("medium", "FORMULA_COMPLEXITY", "Formula complexity increases overfitting risk."))
     concentration = validation_outputs.get("concentration", {})
     if max(
         concentration.get("max_symbol_pnl_share", 0.0),

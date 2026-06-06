@@ -33,7 +33,10 @@ def backtest_signals(
     if not {"date", "symbol", "target_weight"}.issubset(signal_frame.columns):
         raise ValueError("Signals must contain date, symbol, target_weight")
 
-    dates = sorted(data["date"].unique())
+    daily_bars_by_date = {
+        pd.Timestamp(date): daily.set_index("symbol") for date, daily in data.groupby("date", sort=True)
+    }
+    dates = list(daily_bars_by_date)
     signal_by_date = {
         pd.Timestamp(date): daily.set_index("symbol")["target_weight"].to_dict()
         for date, daily in signal_frame.groupby("date", sort=True)
@@ -49,7 +52,7 @@ def backtest_signals(
     position_rows = []
 
     for date in dates:
-        daily_bars = data[data["date"].eq(date)].set_index("symbol")
+        daily_bars = daily_bars_by_date[pd.Timestamp(date)]
         if pending_targets:
             equity_before_orders = _mark_equity(cash, positions, daily_bars, price_column="open")
             symbols = sorted(set(daily_bars.index) | set(positions) | set(pending_targets))
@@ -139,7 +142,7 @@ def backtest_signals(
 
     if dates and positions and force_liquidate_at_end:
         last_date = dates[-1]
-        last_bars = data[data["date"].eq(last_date)].set_index("symbol")
+        last_bars = daily_bars_by_date[pd.Timestamp(last_date)]
         for symbol, quantity in list(positions.items()):
             if quantity <= 0 or symbol not in last_bars.index:
                 continue
@@ -201,14 +204,8 @@ def backtest_signals(
 
 
 def _validated_bars_with_extras(bars: pd.DataFrame) -> pd.DataFrame:
-    base_columns = [column for column in bars.columns if column in ALLOWED_COLUMNS]
-    validated = validate_ohlcv_frame(bars[base_columns])
-    extras = [column for column in bars.columns if column not in validated.columns]
-    if not extras:
-        return validated
-    original = bars.copy()
-    original["date"] = pd.to_datetime(original["date"])
-    return validated.merge(original[["date", "symbol", *extras]], on=["date", "symbol"], how="left")
+    extras = [column for column in bars.columns if column not in ALLOWED_COLUMNS]
+    return validate_ohlcv_frame(bars, allowed_extra_columns=extras)
 
 
 def _apply_liquidity_limit(

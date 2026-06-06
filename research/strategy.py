@@ -45,7 +45,7 @@ def build_signals(featured: pd.DataFrame, strategy: StrategySpec, *, max_positio
 
         active_symbols = set(active_until)
         weight = min(strategy.max_position_pct, 1.0 / len(active_symbols)) if active_symbols else 0.0
-        daily_targets = frame.loc[frame["date"] == date, ["date", "symbol"]].copy()
+        daily_targets = daily[["date", "symbol"]].copy()
         daily_targets["target_weight"] = 0.0
         daily_targets.loc[daily_targets["symbol"].isin(active_symbols), "target_weight"] = weight
         selected_frames.append(daily_targets)

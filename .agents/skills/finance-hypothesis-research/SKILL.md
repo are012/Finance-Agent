@@ -175,6 +175,14 @@ Each note should include:
 
 9. Continue until the requested iteration budget is exhausted or a robust candidate is found.
 
+## Research budget rule
+
+If the current user goal specifies an exact number of new hypotheses, that exact number overrides the general robust-candidate stop condition.
+
+Existing candidates in the ledger do not satisfy a new research-budget goal. They are evidence only.
+
+For example, if the goal says “generate and test exactly 30 new hypotheses,” continue until 30 newly generated hypotheses from the current run have been tested, even if an older candidate already looks robust.
+
 ## How to choose the next hypothesis
 
 Use evidence, not random guessing.
@@ -319,11 +327,113 @@ When blocked, write the blocker and next required user input in `outputs/agent/a
 
 ## Completion criteria
 
-The workflow is complete only when:
+Default completion:
 
-1. The requested number of new hypotheses has been generated and tested, or a robust validation candidate has been found.
+1. The requested number of new hypotheses has been generated and tested.
 2. All generated hypotheses are saved under `outputs/agent/hypotheses/`.
 3. Every tested hypothesis appears in `outputs/ledger/experiments.jsonl`.
 4. `outputs/agent/agent_summary.md` and `outputs/agent/agent_summary.json` exist.
 5. No final_holdout data was used during the agent research loop.
 6. The final language does not claim live-trading readiness.
+
+## Long-running execution policy
+
+If the user explicitly asks to continue as long as possible, do not stop at chunk boundaries and do not stop merely because a robust candidate already exists.
+
+Continue generating and testing hypotheses until:
+1. the requested research budget is exhausted,
+2. an actual blocker occurs,
+3. the execution environment prevents further progress,
+4. the user interrupts or changes the goal.
+
+After every hypothesis, persist:
+- hypothesis YAML,
+- iteration note,
+- ledger row,
+- artifacts,
+- agent_summary.md,
+- agent_summary.json.
+
+If interrupted or blocked, write:
+- latest completed hypothesis id,
+- next hypothesis id to resume from,
+- exact command or prompt to continue,
+- blocker reason.
+
+Never use final_holdout during research.
+Never claim live-trading readiness.
+
+Do not mark the research loop complete merely because:
+- a robust candidate already exists,
+- a candidate has a high score,
+- walk-forward/cost/parameter checks pass,
+- a chunk boundary is reached,
+- the run has taken a long time.
+
+If the environment stops execution before the budget is exhausted, treat the run as paused, not complete.
+
+## Formula hypothesis mode
+
+You may generate formula-based hypotheses only if the repository supports the safe formula DSL.
+
+Rules:
+- Use only approved chart-derived features.
+- Use only approved DSL operators.
+- Do not generate Python code.
+- Do not use eval-style expressions.
+- Prefer simple formulas first.
+- Explain why the formula was proposed based on ledger evidence.
+- Avoid duplicate or near-duplicate formulas.
+- Penalize complexity.
+- Do not optimize raw return alone.
+- Do not use final_holdout during formula research.
+
+A formula hypothesis should be treated as a research hypothesis, not as arbitrary executable code. The local Python engine must validate and compile the formula before backtesting.
+
+## Subagent operating mode
+
+When the user asks to use subagents or parallelized research roles, simulate a subagent workflow inside Codex by separating responsibilities into named roles. Do not assume true parallel execution unless the environment explicitly supports it.
+
+Use these roles:
+
+1. Data Auditor
+   - Checks active config, manifest, data_quality_report, processed data path, date coverage, symbol count, market count, listing_status profile, and whether the data is real KRX data or sample/synthetic data.
+   - Stops the research loop if the active config points to sample or synthetic data when real research is requested.
+
+2. Hypothesis Generator
+   - Proposes one or more chart-only hypotheses.
+   - Uses only supported strategy families or the safe formula DSL if available.
+   - Avoids duplicates and near-duplicates.
+
+3. Hypothesis Validator
+   - Checks YAML schema, forbidden terms, unsupported features, unsupported operators, invalid formula complexity, missing fields, and future-looking features.
+   - Rejects invalid hypotheses before backtesting.
+
+4. Backtest Runner
+   - Runs the local command for each valid hypothesis.
+   - Does not modify final_holdout.
+   - Records command outputs and failures.
+
+5. Result Critic
+   - Reads the new ledger row and artifacts.
+   - Summarizes validation metrics, walk-forward, cost sensitivity, parameter sensitivity, concentration, turnover, drawdown, trade count, and critic flags.
+
+6. Research Coordinator
+   - Maintains the experiment queue.
+   - Decides the next hypothesis direction based on evidence.
+   - Updates agent_summary.md and agent_summary.json.
+   - Records latest completed id and next resume id.
+
+Subagent workflow rules:
+- Each role must write concise findings into the iteration note.
+- The Research Coordinator must not override the Data Auditor or Hypothesis Validator if they flag a hard blocker.
+- Do not run final_report inside the hypothesis research loop.
+- Do not use sample/synthetic results as evidence for real KRX strategy validity.
+- If execution is long, persist progress after every hypothesis and continue until the environment stops or the budget is exhausted.
+
+Important:
+
+- Do not stop early merely because a robust candidate already exists in the ledger.
+- Existing robust candidates may be used as evidence, but they do not count as completing a new-hypothesis generation goal.
+- Only stop early for a robust candidate if the user’s current `/goal` explicitly says early stopping is allowed.
+- If the user requests an exact number of new hypotheses, generate and test that exact number unless blocked.

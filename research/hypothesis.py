@@ -71,6 +71,12 @@ class Hypothesis:
     notes: list[Any] = field(default_factory=list)
     formula: dict[str, Any] = field(default_factory=dict)
     formula_metadata: dict[str, Any] = field(default_factory=dict)
+    source_type: str = "agent_generated"
+    paper_id: str | None = None
+    paper_reference: dict[str, Any] = field(default_factory=dict)
+    data_requirements: dict[str, Any] = field(default_factory=dict)
+    implementation_notes: list[Any] = field(default_factory=list)
+    implementation_caveats: list[Any] = field(default_factory=list)
     source_path: str | None = None
 
     def __post_init__(self) -> None:
@@ -84,6 +90,13 @@ class Hypothesis:
             raise ValueError("lookback_bars and holding_bars must be positive")
         if self.signal_family in {"formula_rank", "formula_rule"} and not self.formula:
             raise ValueError("Formula strategy families must define formula")
+        if self.source_type == "paper_inspired":
+            if not self.paper_id:
+                raise ValueError("Paper-inspired hypotheses must define paper_id")
+            if not self.paper_reference:
+                raise ValueError("Paper-inspired hypotheses must define paper_reference")
+            if not self.data_requirements.get("required"):
+                raise ValueError("Paper-inspired hypotheses must define data_requirements.required")
 
     def to_strategy(self) -> StrategySpec:
         parameters = dict(self.parameters)
@@ -111,6 +124,7 @@ class Hypothesis:
             "lookback_bars": self.lookback_bars,
             "holding_bars": self.holding_bars,
             "required_features": self.required_features,
+            "forbidden_features": self.forbidden_features,
             "parameters": self.parameters,
             "universe": self.universe,
             "entry_rule": self.entry_rule,
@@ -120,6 +134,12 @@ class Hypothesis:
             "notes": self.notes,
             "formula": self.formula,
             "formula_metadata": self.formula_metadata,
+            "source_type": self.source_type,
+            "paper_id": self.paper_id,
+            "paper_reference": self.paper_reference,
+            "data_requirements": self.data_requirements,
+            "implementation_notes": self.implementation_notes,
+            "implementation_caveats": self.implementation_caveats,
             "source_path": self.source_path,
         }
 
@@ -156,6 +176,7 @@ def load_hypothesis_spec(path: str | Path) -> Hypothesis:
 
 def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = None) -> Hypothesis:
     _reject_forbidden_spec_terms(payload)
+    _validate_paper_inspired_payload(payload)
     parameters = dict(payload.get("parameters") or {})
     family = _canonical_family(str(payload.get("strategy_family", payload.get("family", payload.get("signal_family", "momentum")))))
     formula = dict(payload.get("formula") or {})
@@ -204,6 +225,12 @@ def hypothesis_from_spec(payload: dict[str, Any], *, source_path: str | None = N
         notes=list(payload.get("notes") or []),
         formula=formula,
         formula_metadata=formula_metadata,
+        source_type=str(payload.get("source_type", "agent_generated")),
+        paper_id=payload.get("paper_id"),
+        paper_reference=dict(payload.get("paper_reference") or {}),
+        data_requirements=dict(payload.get("data_requirements") or {}),
+        implementation_notes=list(payload.get("implementation_notes") or []),
+        implementation_caveats=list(payload.get("implementation_caveats") or []),
         source_path=source_path,
     )
 
@@ -293,6 +320,42 @@ def _reject_forbidden_spec_terms(payload: dict[str, Any]) -> None:
     if violations:
         details = ", ".join(f"{item['path']}={item['value']}" for item in violations)
         raise ValueError(f"Forbidden non-chart data in hypothesis spec: {details}")
+
+
+def _validate_paper_inspired_payload(payload: dict[str, Any]) -> None:
+    source_type = payload.get("source_type", "agent_generated")
+    has_paper_fields = any(payload.get(key) for key in ("paper_id", "paper_reference", "data_requirements"))
+    if source_type != "paper_inspired":
+        if has_paper_fields:
+            raise ValueError("Paper metadata requires source_type=paper_inspired")
+        return
+
+    required_fields = {
+        "paper_id": payload.get("paper_id"),
+        "paper_reference": payload.get("paper_reference"),
+        "data_requirements": payload.get("data_requirements"),
+        "implementation_notes": payload.get("implementation_notes"),
+        "implementation_caveats": payload.get("implementation_caveats"),
+    }
+    missing = [key for key, value in required_fields.items() if value in (None, "", [], {})]
+    if missing:
+        raise ValueError(f"Paper-inspired hypothesis is missing required metadata: {', '.join(missing)}")
+
+    data_requirements = dict(payload.get("data_requirements") or {})
+    required_data = data_requirements.get("required")
+    if not isinstance(required_data, list) or not required_data:
+        raise ValueError("Paper-inspired data_requirements.required must be a non-empty list")
+    allowed_data = data_requirements.get("allowed", [])
+    if not isinstance(allowed_data, list):
+        raise ValueError("Paper-inspired data_requirements.allowed must be a list")
+    violations = _forbidden_spec_violations({"required": required_data, "allowed": allowed_data}, "data_requirements")
+    if violations:
+        details = ", ".join(f"{item['path']}={item['value']}" for item in violations)
+        raise ValueError(f"Forbidden non-chart data in paper-inspired required data: {details}")
+
+    reference = dict(payload.get("paper_reference") or {})
+    if not isinstance(reference.get("needs_verification"), bool):
+        raise ValueError("Paper-inspired paper_reference.needs_verification must be true or false")
 
 
 def _forbidden_spec_violations(value: Any, path: str = "spec") -> list[dict[str, str]]:

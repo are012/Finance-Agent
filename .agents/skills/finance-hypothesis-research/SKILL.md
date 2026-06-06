@@ -442,6 +442,31 @@ Rules:
 
 A formula hypothesis is a research hypothesis, not executable code. The local Python engine validates the formula before backtesting and rejects unsupported features, forbidden terms, unsupported operators, excessive depth, too many features, too many constants, and duplicate formulas loaded together.
 
+## Paper-inspired chart-only template mode
+
+Use `configs/paper_strategies/` when the user asks to compare against known quant literature or asks for paper-inspired strategy families. These templates are safe starting hypotheses, not proven strategies.
+
+Rules:
+- Treat every template as `source_type=paper_inspired` and preserve `paper_id`, `paper_reference`, `data_requirements`, `implementation_notes`, and `implementation_caveats`.
+- If exact source details are uncertain, keep `paper_reference.needs_verification: true` and describe the idea as paper-inspired rather than exact replication.
+- Use only local OHLCV/chart-derived features, volume, traded value, volatility, ranks, breakouts, reversals, and the safe formula DSL.
+- Reject or rewrite any template that requires fundamentals, financial statements, earnings, news, disclosures, analyst data, macro data, investor-flow data, order-book data, broker/account data, or final_holdout access.
+- Mutations may adjust chart-only windows, thresholds, holding periods, max positions, and liquidity thresholds, but must not add non-chart data.
+- Compare paper-inspired families against AI-generated formula hypotheses under the same validation gates, cost sensitivity, parameter sensitivity, walk-forward, concentration, liquidity, and critic rules.
+- Do not rank a paper-inspired template above an AI-generated hypothesis merely because it came from literature. Use ledger evidence.
+- Keep `research.allow_final_holdout_during_research: false`; do not run `app.final_report` inside the paper-template research loop.
+
+When sampling from the library, prefer a balanced queue across:
+- cross-sectional momentum,
+- time-series momentum,
+- 52-week-high momentum,
+- low-volatility momentum,
+- short-term reversal,
+- volatility contraction breakout,
+- price-volume momentum,
+- liquidity-filtered momentum,
+- multi-horizon momentum.
+
 ## Subagent operating mode
 
 When the user asks to use subagents or parallelized research roles, simulate a subagent workflow inside Codex by separating responsibilities into named roles. Do not assume true parallel execution unless the environment explicitly supports it.
@@ -489,3 +514,52 @@ Important:
 - Existing robust candidates may be used as evidence, but they do not count as completing a new-hypothesis generation goal.
 - Only stop early for a robust candidate if the user’s current `/goal` explicitly says early stopping is allowed.
 - If the user requests an exact number of new hypotheses, generate and test that exact number unless blocked.
+
+## Diversity-first exploration mode
+
+When the user asks to explore diverse hypotheses, do not focus only on improving the current best candidate.
+
+Instead, create a diversity plan before generating hypotheses.
+
+Cover multiple buckets:
+- momentum continuation
+- reversal / mean reversion
+- breakout
+- volatility contraction
+- low-volatility momentum
+- gap continuation
+- gap reversal
+- moving-average trend
+- trend plus pullback
+- RSI mean reversion
+- price-volume momentum
+- traded-value / liquidity momentum
+- formula_rank
+- formula_rule
+- mixed formula strategies
+
+Use varied:
+- lookbacks: 3, 5, 10, 15, 20, 40, 60
+- holding periods: 3, 5, 10, 15, 20
+- max positions: 5, 10, 20 when supported
+- liquidity thresholds
+- entry thresholds
+- formula structures
+
+Avoid near-duplicates. A hypothesis is near-duplicate if it uses the same family, same features, same lookback, same holding period, and nearly identical thresholds or formula.
+
+In diversity-first mode, the summary must include bucket-level analysis:
+- number tested
+- pass/warn/fail count
+- median validation return
+- median Sharpe
+- median max drawdown
+- median trade count
+- cost sensitivity pass rate
+- parameter sensitivity pass rate
+- walk-forward pass rate
+- concentration failure rate
+- common critic flags
+- best candidate per bucket
+
+Do not select the final best candidate only by raw score. Prefer robust evidence across buckets.

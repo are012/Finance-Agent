@@ -1,0 +1,43 @@
+id: paper_time_series_momentum_12m
+name: Paper-inspired time-series 12-month momentum
+source_type: paper_inspired
+paper_id: TIME_SERIES_MOMENTUM_12M
+paper_reference:
+  title: "Time Series Momentum"
+  authors: ["Moskowitz", "Ooi", "Pedersen"]
+  year: 2012
+  needs_verification: true
+idea: "Go long only when a symbol's own long-horizon chart momentum is positive."
+strategy_family: formula_rule
+features:
+  - momentum_252
+  - traded_value_ma_20
+formula:
+  entry: "momentum_252 > 0 and traded_value_ma_20 >= 100000"
+parameters:
+  lookback_bars: 252
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_252", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "chart-derived momentum", "traded-value liquidity"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Adapts time-series momentum into a long-only stock universe filter."
+  - "Uses each symbol's own 252-bar momentum rather than external asset classes."
+implementation_caveats:
+  - "This is paper-inspired and not an exact managed-futures replication."
+  - "Long-only stock constraints may materially change the effect."

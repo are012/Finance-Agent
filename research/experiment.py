@@ -117,10 +117,12 @@ def evaluate_hypothesis(
             validation_result=validation_result,
             validation_outputs=validation_outputs,
         )
+    metadata = _hypothesis_metadata(hypothesis, formula_outputs=formula_outputs)
 
     return {
         "experiment_id": experiment_id,
         "hypothesis_id": hypothesis.hypothesis_id,
+        **metadata,
         "hypothesis": hypothesis.to_dict(),
         "status": status,
         "score": score,
@@ -168,6 +170,7 @@ def rejected_hypothesis_row(
     return {
         "experiment_id": experiment_id,
         "hypothesis_id": getattr(hypothesis, "hypothesis_id", f"INVALID-{sequence:03d}"),
+        **_hypothesis_metadata(hypothesis, formula_outputs={}),
         "hypothesis": hypothesis.to_dict() if hasattr(hypothesis, "to_dict") else {"error": reason},
         "status": "FAIL",
         "status_reason": reason,
@@ -191,6 +194,18 @@ def rejected_hypothesis_row(
         "universe_filters": config.get("universe", {}),
         "final_holdout_access": {"used_during_research": False, "evaluated": False},
         "execution_model": "not_executed_invalid_hypothesis",
+    }
+
+
+def _hypothesis_metadata(hypothesis, *, formula_outputs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_type": getattr(hypothesis, "source_type", "agent_generated"),
+        "paper_id": getattr(hypothesis, "paper_id", None),
+        "paper_reference": getattr(hypothesis, "paper_reference", {}),
+        "implementation_notes": getattr(hypothesis, "implementation_notes", []),
+        "implementation_caveats": getattr(hypothesis, "implementation_caveats", []),
+        "data_requirements": getattr(hypothesis, "data_requirements", {}),
+        "formula_complexity": formula_outputs.get("complexity_score") if formula_outputs else None,
     }
 
 

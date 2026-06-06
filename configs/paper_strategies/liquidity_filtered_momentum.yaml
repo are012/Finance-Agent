@@ -1,0 +1,43 @@
+id: paper_liquidity_filtered_momentum
+name: Paper-inspired liquidity-filtered momentum
+source_type: paper_inspired
+paper_id: LIQUIDITY_FILTERED_MOMENTUM
+paper_reference:
+  title: "Liquidity-aware momentum literature"
+  authors: ["Multiple"]
+  year: 0
+  needs_verification: true
+idea: "Rank medium-horizon momentum only among names with stronger traded-value liquidity."
+strategy_family: formula_rank
+features:
+  - momentum_60
+  - traded_value_ma_60
+formula:
+  score: "rank(momentum_60) + rank(traded_value_ma_60)"
+  entry: "momentum_60 > 0 and traded_value_ma_60 >= 100000"
+parameters:
+  lookback_bars: 60
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_60", "traded_value_ma_60"]
+  allowed: ["local OHLCV", "chart-derived momentum", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Uses traded_value_ma_60 as a local liquidity filter rather than broker or order-book data."
+implementation_caveats:
+  - "This is paper-inspired and not an exact implementation of any one liquidity paper."
+  - "Liquidity filtering does not remove the need for execution and concentration checks."

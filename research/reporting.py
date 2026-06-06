@@ -248,6 +248,12 @@ def _markdown(summary: dict[str, Any], *, reused_lock: bool) -> str:
             json.dumps(summary.get("selected_strategy_parameters", {}), indent=2, sort_keys=True, default=str),
             "```",
             "",
+            "## Paper-Inspired Strategy Metadata",
+            "",
+            "```json",
+            json.dumps(summary.get("paper_strategy_metadata", {}), indent=2, sort_keys=True, default=str),
+            "```",
+            "",
             "## Train Metrics",
             "",
             "```json",
@@ -384,6 +390,7 @@ def _research_report_sections(
         },
         "split_ranges": _split_ranges(split),
         "selected_strategy_parameters": (selected.get("strategy") or {}).get("parameters", {}),
+        "paper_strategy_metadata": _paper_strategy_metadata(selected),
         "train_metrics": train_metrics,
         "validation_metrics": validation_metrics,
         "yearly_results": {
@@ -412,4 +419,19 @@ def _research_report_sections(
         "walk_forward_summary": validation_outputs.get("walk_forward", {}),
         "critic_flags": selected.get("critic", {}).get("flags", []),
         "final_conclusion": decision,
+    }
+
+
+def _paper_strategy_metadata(selected: dict[str, Any]) -> dict[str, Any]:
+    hypothesis = selected.get("hypothesis") or {}
+    if selected.get("source_type") != "paper_inspired" and hypothesis.get("source_type") != "paper_inspired":
+        return {}
+    return {
+        "source_type": selected.get("source_type", hypothesis.get("source_type")),
+        "paper_id": selected.get("paper_id", hypothesis.get("paper_id")),
+        "paper_reference": selected.get("paper_reference", hypothesis.get("paper_reference", {})),
+        "implementation_notes": selected.get("implementation_notes", hypothesis.get("implementation_notes", [])),
+        "implementation_caveats": selected.get("implementation_caveats", hypothesis.get("implementation_caveats", [])),
+        "data_requirements": selected.get("data_requirements", hypothesis.get("data_requirements", {})),
+        "formula_complexity": selected.get("formula_complexity"),
     }

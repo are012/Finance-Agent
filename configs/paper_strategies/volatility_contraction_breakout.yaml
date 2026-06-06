@@ -1,0 +1,46 @@
+id: paper_volatility_contraction_breakout
+name: Paper-inspired volatility contraction breakout
+source_type: paper_inspired
+paper_id: VOLATILITY_CONTRACTION_BREAKOUT
+paper_reference:
+  title: "Volatility contraction and breakout trading literature"
+  authors: ["Multiple"]
+  year: 0
+  needs_verification: true
+idea: "Test breakout continuation only after chart-range contraction and sufficient volume."
+strategy_family: volatility_contraction_breakout
+features:
+  - prior_high_20
+  - range_contraction_20
+  - volume_ratio_20
+  - traded_value_ma_20
+entry_rule:
+  description: "Enter when close breaks above the prior high after range contraction."
+  expression: "close > prior_high_20 and range_contraction_20 <= 0.9"
+parameters:
+  lookback_bars: 20
+  holding_bars: 20
+  max_range_contraction: 0.9
+  volume_ratio_min: 1.0
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "prior_high_20", "range_contraction_20", "volume_ratio_20", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "prior high breakout", "range contraction", "volume ratio", "traded-value liquidity"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Uses the repository's built-in volatility_contraction_breakout family."
+implementation_caveats:
+  - "This is a paper-inspired chart pattern template, not a claim of exact academic replication."
+  - "Breakout strategies must be tested for turnover and cost sensitivity."

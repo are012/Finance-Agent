@@ -305,6 +305,25 @@ position_sizing:
 
 The formula DSL never evaluates arbitrary Python. It does not allow imports, attribute access, file or network access, broker/account data, final-holdout access, or non-chart data such as fundamentals, news, disclosures, macro data, investor-flow data, or order-book data. Formula search increases overfitting risk; keep formulas simple, require walk-forward/cost/parameter checks, and treat high-scoring formulas as research candidates only.
 
+## Paper-inspired chart-only strategy library
+
+`configs/paper_strategies/` contains chart-only hypothesis templates inspired by well-known price, volume, volatility, reversal, breakout, liquidity, and multi-horizon momentum literature. These are safe research starting points, not proven KRX strategies and not exact paper replication unless the metadata explicitly says so. Paper performance does not guarantee KRX performance.
+
+Each template includes `source_type: paper_inspired`, `paper_id`, `paper_reference`, `data_requirements`, allowed/disallowed data notes, implementation notes, implementation caveats, features, parameters, position sizing, and falsification criteria. Templates whose required data includes non-chart inputs are rejected before execution.
+
+Run one template the same way as any other hypothesis:
+
+```bash
+.venv/bin/python -m app.run_one_hypothesis \
+  --config configs/example.yaml \
+  --hypothesis configs/paper_strategies/fifty_two_week_high_momentum.yaml \
+  --output-dir outputs
+```
+
+The example config includes long feature windows such as 60, 120, and 252 bars for paper-inspired templates. For real KRX configs, make sure `research.feature_windows` includes the template windows before running. The ledger and final report tag paper-inspired runs with `source_type`, `paper_id`, formula complexity when applicable, implementation notes, and data requirements.
+
+Paper-inspired templates must be tested under the same validation, walk-forward, cost sensitivity, parameter sensitivity, concentration, liquidity, and critic rules as AI-generated hypotheses. Do not use final holdout during template research.
+
 ## Final Holdout Rule
 
 Train and validation data can be used during research. Final holdout data is reserved for the selected candidate and evaluated only by `app.final_report`. After the lock file exists, the report command reuses the locked result. This avoids iterating on strategy design after seeing final-holdout performance.

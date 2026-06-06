@@ -63,7 +63,7 @@ research:
   hypothesis_dir: configs/hypotheses
   random_seed: 42
   min_trades: 1
-  feature_windows: [3, 5, 10, 15, 20, 25]
+  feature_windows: [3, 5, 10, 15, 20, 25, 60, 120, 252]
   final_holdout_key: example-synthetic-holdout-v2
   allow_final_holdout_during_research: false
 

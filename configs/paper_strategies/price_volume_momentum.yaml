@@ -1,0 +1,44 @@
+id: paper_price_volume_momentum
+name: Paper-inspired price-volume momentum
+source_type: paper_inspired
+paper_id: PRICE_VOLUME_MOMENTUM
+paper_reference:
+  title: "Momentum and Trading Volume"
+  authors: ["Lee", "Swaminathan"]
+  year: 2000
+  needs_verification: true
+idea: "Confirm positive price momentum with above-average local volume."
+strategy_family: price_volume_momentum
+features:
+  - momentum_20
+  - volume_ratio_20
+  - traded_value_ma_20
+entry_rule:
+  description: "Enter positive 20-bar momentum with volume confirmation."
+  expression: "momentum_20 > 0 and volume_ratio_20 >= 1.0"
+parameters:
+  lookback_bars: 20
+  holding_bars: 10
+  volume_ratio_min: 1.0
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 10
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_20", "volume_ratio_20", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "chart-derived momentum", "volume ratio", "traded-value liquidity"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Uses volume_ratio_20 as a chart-only confirmation feature."
+implementation_caveats:
+  - "This is paper-inspired and omits non-chart portfolio details."
+  - "Volume confirmation can increase turnover and must pass cost sensitivity."

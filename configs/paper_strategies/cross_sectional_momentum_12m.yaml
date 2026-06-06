@@ -1,0 +1,44 @@
+id: paper_cross_sectional_momentum_12m
+name: Paper-inspired cross-sectional 12-month momentum
+source_type: paper_inspired
+paper_id: CROSS_SECTIONAL_MOMENTUM_12M
+paper_reference:
+  title: "Returns to Buying Winners and Selling Losers"
+  authors: ["Jegadeesh", "Titman"]
+  year: 1993
+  needs_verification: true
+idea: "Rank liquid names by long-horizon chart momentum using only local OHLCV-derived features."
+strategy_family: formula_rank
+features:
+  - momentum_252
+  - traded_value_ma_20
+formula:
+  score: "rank(momentum_252) + rank(traded_value_ma_20)"
+  entry: "momentum_252 > 0 and traded_value_ma_20 >= 100000"
+parameters:
+  lookback_bars: 252
+  holding_bars: 20
+  min_traded_value: 100000
+position_sizing:
+  method: equal_weight
+  max_positions: 5
+  max_position_pct: 0.2
+exit_rule:
+  description: "Exit after the configured holding period; no final_holdout data is used during research."
+  holding_period_days: 20
+  stop_loss_pct: null
+  take_profit_pct: null
+falsification:
+  min_trades: 20
+  min_validation_sharpe: -10.0
+  max_validation_mdd: 0.95
+data_requirements:
+  required: ["open", "high", "low", "close", "adjusted_close", "volume", "traded_value", "momentum_252", "traded_value_ma_20"]
+  allowed: ["local OHLCV", "chart-derived momentum", "traded-value liquidity", "rank operator"]
+  disallowed: ["fundamentals", "financial statements", "earnings", "news", "analyst", "macro", "investor-flow", "order-book", "broker", "final_holdout"]
+implementation_notes:
+  - "Adapts cross-sectional momentum into a long-only KRX chart-only rank template."
+  - "Uses 252-bar momentum as a local proxy for long-horizon price momentum."
+implementation_caveats:
+  - "This is paper-inspired, not exact replication of the original portfolio construction."
+  - "Paper performance does not imply KRX performance."
